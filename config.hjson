@@ -1,0 +1,2 @@
+extensions: serial, auto_devices, resources, camera
+verbose: 1
