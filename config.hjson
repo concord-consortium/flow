@@ -1,2 +1,3 @@
+server_name: dataflow.manylabs.org
 extensions: serial, auto_devices, resources, camera
 verbose: 1
