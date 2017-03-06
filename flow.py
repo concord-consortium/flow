@@ -1,3 +1,4 @@
+import time
 import logging
 import gevent
 from PIL import Image
@@ -11,13 +12,17 @@ from diagram import Diagram
 # this file is the main program for the data flow client running on a controller (e.g. Raspberry Pi)
 
 
-# the currently running diagram (if any)
-diagram = None
+# global variables
+diagram = None  # the currently running diagram (if any)
+last_user_message_time = None  # the last user message time (if any)
+last_camera_store_time = None  # the last camera sequence update time (if any)
 
 
 # handle messages from server (sent via websocket)
 def message_handler(type, params):
     global diagram
+    global last_user_message_time
+    used = True
     if type == 'list_devices':
         print 'list_devices'
         for device in c.auto_devices._auto_devices:
@@ -39,15 +44,7 @@ def message_handler(type, params):
     elif type == 'stop_diagram':
         pass
     elif type == 'add_camera':
-        if hasattr(c, 'camera'):
-            c.camera.open()
-            if c.camera.device and c.camera.device.is_connected():
-                print 'camera connected'
-                c.send_message('device_added', {'type': 'camera', 'name': 'camera'})
-            else:
-                logging.warning('unable to open camera')
-        else:
-            logging.warning('camera extension not added')
+        add_camera()
     elif type == 'add_sim_sensor':
         add_sim_sensor()
     elif type == 'add_sim_actuator':
@@ -63,7 +60,13 @@ def message_handler(type, params):
         device = c.auto_devices.find_device(name)
         if device:
             device.send_command('set %s' % value)
+    else:
+        used = False
 
+    # keep track of last message from web interface
+    if used:
+        last_user_message_time = time.time()
+    return used
 
 # handle an incoming value from a sensor device (connected via USB)
 def input_handler(name, values):
@@ -84,15 +87,16 @@ def send_status():
 
 
 # create a sequence resource on the server
-def create_sequence(server_path, device):
-    print('creating new sequence for device: %s' % device.name)
-    fileInfo = {
+# data types: 1 = numeric, 2 = text, 3 = image
+def create_sequence(server_path, name, data_type):
+    print('creating new sequence: %s' % name)
+    file_info = {
         'path': server_path,
-        'name': device.name,
+        'name': name,
         'type': 21,  # sequence 
-        'data_type': 1,  # numeric
+        'data_type': data_type,
     }
-    c.resources.send_request_to_server('POST', '/api/v1/resources', fileInfo)
+    c.resources.send_request_to_server('POST', '/api/v1/resources', file_info)
 
 
 # check for new devices and create sequences for them
@@ -114,12 +118,30 @@ def check_devices():
                 if device.name in server_seqs:
                     device.store_sequence = True
                 else:
-                    create_sequence(server_path, device)
+                    create_sequence(server_path, device.name, data_type=1)  # data_type 1 is numeric
                     device.store_sequence = True
                     server_seqs.add(device.name)
         
         # sleep for a bit
         c.sleep(5)
+
+
+# start capturing from a camera
+def add_camera():
+    if hasattr(c, 'camera'):
+        c.camera.open()
+        if c.camera.device and c.camera.device.is_connected():
+            c.send_message('device_added', {'type': 'camera', 'name': 'camera'})
+
+            # create image sequence on server if doesn't already exist
+            server_path = c.path_on_server()
+            if not c.resources.file_exists(server_path + '/image'):
+                create_sequence(server_path, 'image', data_type=3)
+        else:
+            logging.warning('unable to open camera')
+    else:
+        logging.warning('camera extension not added')
+
 
 
 # run enabled data flow(s)
@@ -130,9 +152,13 @@ def start():
             diagram.update()
             values = {}
             for block in diagram.blocks:
-                value = block.value
-                if (not value is None) and block.type != 'camera':
-                    value = '%.2f' % value  # fix(soon): compute and propage decimal precision through diagram
+                value = None
+                if block.type == 'camera':  # only send camera updates if recent message from user
+                    if last_user_message_time and time.time() < last_user_message_time + 300:
+                        value = block.value
+                else:
+                    if not block.value is None:
+                        value = '%.2f' % block.value  # fix(soon): compute and propage decimal precision through diagram
                 values[block.id] = value
             c.send_message('update_diagram', {'values': values})
         c.sleep(1)
@@ -141,6 +167,7 @@ def start():
 # get a new image for the camera block and store it as a base64 encoded value;
 # for now we'll support just one physical camera (though it can feed into multiple camera blocks)
 def update_camera_blocks():
+    global last_camera_store_time
     if hasattr(c, 'camera') and c.camera.device and c.camera.device.is_connected():
         camera_block_defined = False
         for block in diagram.blocks:
@@ -148,6 +175,16 @@ def update_camera_blocks():
                 camera_block_defined = True
         if camera_block_defined:
             image = c.camera.device.capture_image()
+
+            # store camera image once a minute
+            current_time = time.time()
+            if not last_camera_store_time or current_time > last_camera_store_time + 60:
+                image.thumbnail((720, 540), Image.ANTIALIAS)
+                c.update_sequence('image', encode_image(image))
+                last_camera_store_time = current_time
+                logging.debug('updating image sequence')
+
+            # create small thumbnail to send to UI
             image.thumbnail((320, 240), Image.ANTIALIAS)
             data = encode_image(image)
             for block in diagram.blocks:

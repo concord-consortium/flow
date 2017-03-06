@@ -1,3 +1,8 @@
 server_name: dataflow.manylabs.org
 extensions: serial, auto_devices, resources, camera
 verbose: 1
+camera: {
+	type: pi
+	width: 1296
+	height: 972
+}
