@@ -25,6 +25,9 @@ def load_diagram(name):
 
 # save a flow diagram in the controller's local file system
 def save_diagram(name, diagram):
+    illegal = set('*?/\\')
+    if any((c in illegal) for c in name):
+        return
     if not os.path.exists('diagrams'):
         os.makedirs('diagrams')
     file_name = 'diagrams/' + name + '.json'
