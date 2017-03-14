@@ -85,7 +85,7 @@ def send_status():
     }
 
     if diagram:
-        status.current_diagram = diagram.name
+        status['current_diagram'] = diagram.name
 
     c.send_message('status', status);
 
