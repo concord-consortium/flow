@@ -78,12 +78,16 @@ def input_handler(name, values):
 
 # send client info to server/browser
 def send_status():
-    c.send_message('status', {
+    status = {
         'flow_version': '0.0.1',
         'lib_version': c.VERSION + ' ' + c.BUILD,
-        'device_count': len(c.auto_devices._auto_devices),
-        'current_diagram': diagram.name,
-    })
+        'device_count': len(c.auto_devices._auto_devices)
+    }
+
+    if diagram:
+        status['current_diagram'] = diagram.name
+
+    c.send_message('status', status);
 
 
 # create a sequence resource on the server
@@ -93,7 +97,7 @@ def create_sequence(server_path, name, data_type):
     file_info = {
         'path': server_path,
         'name': name,
-        'type': 21,  # sequence 
+        'type': 21,  # sequence
         'data_type': data_type,
     }
     c.resources.send_request_to_server('POST', '/api/v1/resources', file_info)
@@ -101,17 +105,17 @@ def create_sequence(server_path, name, data_type):
 
 # check for new devices and create sequences for them
 def check_devices():
-    
+
     # get list of existing sequences
     server_path = c.path_on_server()
     print('server path: %s' % server_path)
     file_infos = c.resources.list_files(server_path, type = 'sequence')
     server_seqs = set([fi['name'] for fi in file_infos])
     print('server seqs: %s' % server_seqs)
-    
+
     # loop forever checking for new devices
     while True:
-        
+
         # if new device found, create sequence
         for device in c.auto_devices._auto_devices:  # fix(soon): change to serial.devices()? doesn't work with sim sensors
             if hasattr(device, 'name') and device.name:
@@ -121,7 +125,7 @@ def check_devices():
                     create_sequence(server_path, device.name, data_type=1)  # data_type 1 is numeric
                     device.store_sequence = True
                     server_seqs.add(device.name)
-        
+
         # sleep for a bit
         c.sleep(5)
 
