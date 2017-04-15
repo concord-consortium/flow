@@ -54,7 +54,10 @@ class Block(object):
         self.source_ids = block_spec['sources']
         self.required_source_count = block_spec['input_count']
         self.value = block_spec.get('value', None)
-        if (not self.value is None) and not self.type == 'camera':
+        self.params = block_spec.get('params', {})
+        self.input_type = block_spec['input_type']
+        self.output_type = block_spec['output_type']
+        if (not self.value is None) and not self.output_type == 'i':  # if not image
             self.value = float(self.value)  # fix(later): handle non-numeric types?
         self.sources = []
         self.dest_ids = []
@@ -76,7 +79,7 @@ class Block(object):
             
             # compute new value for this block
             if len(source_values) >= self.required_source_count:
-                self.value = compute_filter(self.type, source_values)
+                self.value = compute_filter(self.type, source_values, self.params)
             else:
                 self.value = None
         
@@ -85,7 +88,7 @@ class Block(object):
 
 
 # compute the value of a filter block based on its inputs
-def compute_filter(type, inputs):
+def compute_filter(type, inputs, params):
     result = inputs[0]
     if type == 'and':
         result = int(inputs[0] and inputs[1])
@@ -115,11 +118,24 @@ def compute_filter(type, inputs):
         result = int(inputs[0] < inputs[1])
     elif type == 'greater than':
         result = int(inputs[0] > inputs[1])
+    elif type == 'blur':  # TODO: implement image blur filter using read_param(params, 'blur_amount')
+        result = inputs[0]
+        print 'blur:', read_param(params, 'blur_amount')
+    elif type == 'brightness':  # TODO: implement image blur filter using read_param(params, 'brightness_adjustment')
+        result = inputs[0]
     return result
 
 
+# a helper function for reading from a list of parameters
+def read_param(params, name):
+    for param in params:
+        if param['name'] == name:
+            return param['value']
+    return None
+
+
 # compute the number of decimal places present in a string representation of a number
-def computeDecimalPlaces(num_str):
+def compute_decimal_places(num_str):
     places = 0;
     dot_pos = num_str.find('.')
     if dot_pos >= 0:

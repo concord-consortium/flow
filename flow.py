@@ -41,6 +41,9 @@ def message_handler(type, params):
     elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
         diagram_spec = load_diagram(params['name'])
         diagram = Diagram(params['name'], diagram_spec)
+        #local_config = hjson.loads(open('local.hjson').read())  # save name of diagram to load when start script next time
+        #local_config['startup_diagram'] = params['name']
+        #open('local.hjson', 'w').write(hjson.dumps(local_config))
     elif type == 'stop_diagram':
         pass
     elif type == 'add_camera':
@@ -67,6 +70,7 @@ def message_handler(type, params):
     if used:
         last_user_message_time = time.time()
     return used
+
 
 # handle an incoming value from a sensor device (connected via USB)
 def input_handler(name, values):
@@ -135,7 +139,7 @@ def add_camera():
     if hasattr(c, 'camera'):
         c.camera.open()
         if c.camera.device and c.camera.device.is_connected():
-            c.send_message('device_added', {'type': 'camera', 'name': 'camera'})
+            c.send_message('device_added', {'type': 'camera', 'name': 'camera', 'dir': 'in'})
 
             # create image sequence on server if doesn't already exist
             server_path = c.path_on_server()
@@ -157,7 +161,7 @@ def start():
             values = {}
             for block in diagram.blocks:
                 value = None
-                if block.type == 'camera':  # only send camera updates if recent message from user
+                if block.output_type == 'i':  # only send camera/image updates if recent message from user
                     if last_user_message_time and time.time() < last_user_message_time + 300:
                         value = block.value
                 else:
@@ -201,4 +205,8 @@ if __name__ == '__main__':
     c.add_message_handler(message_handler)
     c.auto_devices.add_input_handler(input_handler)
     gevent.spawn(check_devices)
+    if c.config.get('startup_diagram', ''):  # run last diagram on startup
+        name = c.config.startup_diagram
+        diagram_spec = load_diagram(name)
+        diagram = Diagram(name, diagram_spec)
     start()
