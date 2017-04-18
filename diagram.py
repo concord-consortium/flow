@@ -1,10 +1,16 @@
+from PIL import Image, ImageFilter, ImageEnhance
+import cStringIO
+import base64
+from rhizo.extensions.camera import encode_image
+
+
 # represents a data flow diagram
 class Diagram(object):
 
     # create a data flow diagram using a spec dictionary
     def __init__(self, name, diagram_spec):
         self.name = name
-        self.blocks = [];
+        self.blocks = []
         for block_spec in diagram_spec['blocks']:
             self.blocks.append(Block(block_spec))
         
@@ -105,7 +111,7 @@ def compute_filter(type, inputs, params):
     elif type == 'minus':
         result = inputs[0] - inputs[1]
     elif type == 'times':
-        result = inputs[0] * inputs[1];
+        result = inputs[0] * inputs[1]
     elif type == 'divided by':
         result = inputs[0] / inputs[1] if abs(inputs[1]) > 1e-8 else None
     elif type == 'absolute value':
@@ -118,25 +124,56 @@ def compute_filter(type, inputs, params):
         result = int(inputs[0] < inputs[1])
     elif type == 'greater than':
         result = int(inputs[0] > inputs[1])
-    elif type == 'blur':  # TODO: implement image blur filter using read_param(params, 'blur_amount')
+    elif type == 'blur':
         result = inputs[0]
-        print 'blur:', read_param(params, 'blur_amount')
-    elif type == 'brightness':  # TODO: implement image blur filter using read_param(params, 'brightness_adjustment')
+        blur_amount = read_param(params, 'blur_amount')
+        image_string = cStringIO.StringIO(base64.b64decode(result))  # decode image
+        outImage = Image.open(image_string)
+        outImage = outImage.filter(ImageFilter.GaussianBlur(radius=blur_amount))
+        result = encode_image(outImage)
+
+    elif type == 'brightness':
         result = inputs[0]
+        brightness = read_param_obj(params, "brightness_adjustment")
+        old_range = brightness["max"] - brightness["min"]
+        brightness_amount = brightness["value"]
+
+        # Pillow upper brightness range scales very high (1000 is still not pure white),
+        # while a negative value scales small (i.e. 0 is pure black),
+        # but value of 1 is the original image.
+        if brightness_amount > 0:
+            brightness_amount = brightness_amount * 10
+
+        # Pillow's comparable brightness range
+        new_min = 0
+        new_max = 2
+        new_range = new_max - new_min
+
+        brightness_amount = (((brightness_amount - brightness["min"]) * new_range) / float(old_range)) + new_min
+        imageString = cStringIO.StringIO(base64.b64decode(result))  # decode image
+        outImage = Image.open(imageString)
+        enhancer = ImageEnhance.Brightness(outImage)
+        outImage = enhancer.enhance(brightness_amount)
+        result = encode_image(outImage)
     return result
 
 
 # a helper function for reading from a list of parameters
 def read_param(params, name):
-    for param in params:
-        if param['name'] == name:
-            return param['value']
+    param = read_param_obj(params, name)
+    if param:
+        return param['value']
     return None
 
+def read_param_obj(params, name):
+    for param in params:
+        if param['name'] == name:
+            return param
+    return None
 
 # compute the number of decimal places present in a string representation of a number
 def compute_decimal_places(num_str):
-    places = 0;
+    places = 0
     dot_pos = num_str.find('.')
     if dot_pos >= 0:
         places = len(num_str) - dot_pos - 1
