@@ -56,13 +56,6 @@ def message_handler(type, params):
         remove_sim_device()
     elif type == 'request_status':
         send_status()
-    elif type == 'update_actuator':  # fix(clean): remove this?
-        name = params['name']
-        value = params['value']
-        print 'update_actuator', name, value
-        device = c.auto_devices.find_device(name)
-        if device:
-            device.send_command('set %s' % value)
     else:
         used = False
 
@@ -151,7 +144,6 @@ def add_camera():
         logging.warning('camera extension not added')
 
 
-
 # run enabled data flow(s)
 def start():
     while True:
@@ -168,6 +160,18 @@ def start():
                     if not block.value is None:
                         value = '%.2f' % block.value  # fix(soon): compute and propage decimal precision through diagram
                 values[block.id] = value
+
+                # send values to actuators
+                if not block.output_type:
+                    device = c.auto_devices.find_device(block.name)  # fix(later): does this still work if we rename a block?
+                    if device and device.dir == 'out':
+                        try:
+                            value = int(block.value)
+                        except:
+                            value = None
+                        if value is not None:
+                            device.send_command('set %d' % value)
+
             c.send_message('update_diagram', {'values': values})
         c.sleep(1)
 
