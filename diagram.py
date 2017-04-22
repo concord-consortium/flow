@@ -110,7 +110,7 @@ def compute_filter(type, inputs, params):
     elif type == 'times':
         result = inputs[0] * inputs[1]
     elif type == 'divided by':
-        result = inputs[0] / float(inputs[1]) if abs(inputs[1]) > 1e-8 else None
+        result = inputs[0] / inputs[1] if abs(inputs[1]) > 1e-8 else None
     elif type == 'absolute value':
         result = abs(inputs[0])
     elif type == 'equals':
