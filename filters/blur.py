@@ -1,4 +1,4 @@
-from filters import Filter
+from . import Filter
 from PIL import Image, ImageFilter
 from rhizo.extensions.camera import encode_image
 
