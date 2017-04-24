@@ -70,7 +70,7 @@ def input_handler(name, values):
     if diagram:
         block = diagram.find_block_by_name(name)
         if block:
-            block.value = values[0]
+            block.value = float(values[0])
 
 
 # send client info to server/browser
@@ -157,8 +157,8 @@ def start():
                     if last_user_message_time and time.time() < last_user_message_time + 300:
                         value = block.value
                 else:
-                    if block.value is not None:
-                        value = block.value
+                    if not block.value is None:
+                        value = '%.2f' % block.value  # fix(soon): compute and propage decimal precision through diagram
                 values[block.id] = value
 
                 # send values to actuators
