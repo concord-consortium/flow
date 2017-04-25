@@ -6,7 +6,7 @@ from rhizo.main import c
 from rhizo.extensions.camera import encode_image
 from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_device
 from diagram_storage import list_diagrams, load_diagram, save_diagram, rename_diagram, delete_diagram
-from diagram import Diagram
+from diagram import Diagram, compute_decimal_places
 
 
 # this file is the main program for the data flow client running on a controller (e.g. Raspberry Pi)
@@ -70,6 +70,7 @@ def input_handler(name, values):
     if diagram:
         block = diagram.find_block_by_name(name)
         if block:
+            block.decimal_places = compute_decimal_places(values[0])
             block.value = float(values[0])
 
 
@@ -84,7 +85,7 @@ def send_status():
     if diagram:
         status['current_diagram'] = diagram.name
 
-    c.send_message('status', status);
+    c.send_message('status', status)
 
 
 # create a sequence resource on the server
@@ -157,8 +158,9 @@ def start():
                     if last_user_message_time and time.time() < last_user_message_time + 300:
                         value = block.value
                 else:
-                    if not block.value is None:
-                        value = '%.2f' % block.value  # fix(soon): compute and propage decimal precision through diagram
+                    if block.value is not None:
+                        format = '%' + '.%df' % block.decimal_places
+                        value = format % block.value
                 values[block.id] = value
 
                 # send values to actuators
