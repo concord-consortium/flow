@@ -85,7 +85,8 @@ class Block(object):
         return source_values
 
     def compute_value(self, source_values):
-        if len(source_values) >= self.required_source_count:
+        source_values_length = len(source_values)
+        if source_values_length > 0 and source_values_length >= self.required_source_count:
             self.value = compute_filter(self.type, source_values, self.params)
             if self.is_numeric():
                 # Convert decimal places, so quanitize can be used for accurate rounding
