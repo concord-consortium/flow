@@ -1,5 +1,7 @@
 import time
+import json
 import logging
+import hjson
 import gevent
 from PIL import Image
 from rhizo.main import c
@@ -27,6 +29,9 @@ def message_handler(type, params):
         print 'list_devices'
         for device in c.auto_devices._auto_devices:
             c.send_message('device_added', device.as_dict())
+    elif type == 'request_block_types':
+        block_types = hjson.loads(open('block_types.hjson').read())
+        c.send_message('block_types', block_types)
     elif type == 'list_diagrams':
         c.send_message('diagram_list', {'diagrams': list_diagrams()})
     elif type == 'save_diagram':
@@ -208,6 +213,8 @@ def update_camera_blocks():
 
 # if run as top-level script
 if __name__ == '__main__':
+    block_types = hjson.loads(open('block_types.hjson').read())
+    open('test.json', 'w').write('%s' % json.dumps(block_types))
     c.add_message_handler(message_handler)
     c.auto_devices.add_input_handler(input_handler)
     gevent.spawn(check_devices)
