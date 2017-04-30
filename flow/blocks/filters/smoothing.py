@@ -1,9 +1,9 @@
 from . import Filter
-from PIL import Image, ImageFilter
-from rhizo.extensions.camera import encode_image
 
 
-class Blur(Filter):
+class Smoothing(Filter):
+    def __init__(self, block_spec):
+        super(Smoothing, self).__init__(block_spec)
 
     def compute(self, inputs, params):
         image_string = inputs[0]
