@@ -1,0 +1,27 @@
+and: {
+	input_types: ["b", "b"],
+	output_type: b
+},
+plus: {
+	input_types: ["n", "n"]
+	output_type: n
+},
+equals: {
+	input_types: ["n", "n"]
+	output_type: b
+},
+blur: {
+	input_types: ["i"]
+	output_type: i
+	params: {
+		name: blur_amount
+		type: n
+		min: 0
+		max: 50
+		default: 5
+	}
+}
+camera: {
+	input_types: []
+	output_type: b
+}
