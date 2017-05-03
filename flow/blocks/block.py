@@ -44,7 +44,7 @@ class Block(object):
         source_values_length = len(source_values)
         if source_values_length > 0 and source_values_length >= self.required_source_count:
             self.value = self.compute(source_values, self.params)
-            if self.is_numeric():
+            if self.is_numeric() and self.value is not None:
                 # Convert decimal places, so quanitize can be used for accurate rounding
                 # 6 decimal places -> .000001 = decimal_exp
                 # 2 decimal places -> .01 = decimal_exp

@@ -1,0 +1,8 @@
+gevent>=1.2.1
+greenlet>=0.4.12
+hjson>=2.0.2
+pdb>=1.4.3
+Pillow>=4.1.0
+pytest>=3.0.7
+six>=1.10.0
+ws4py>=0.4.2
