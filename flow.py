@@ -18,12 +18,15 @@ from diagram import Diagram, compute_decimal_places
 diagram = None  # the currently running diagram (if any)
 last_user_message_time = None  # the last user message time (if any)
 last_camera_store_time = None  # the last camera sequence update time (if any)
+last_record_time = None  # timestamp of last values recorded to long-term storage
+recording_interval = None  # number of seconds between storing values in long-term storage
 
 
 # handle messages from server (sent via websocket)
 def message_handler(type, params):
     global diagram
     global last_user_message_time
+    global recording_interval
     used = True
     if type == 'list_devices':
         print 'list_devices'
@@ -51,6 +54,12 @@ def message_handler(type, params):
         #open('local.hjson', 'w').write(hjson.dumps(local_config))
     elif type == 'stop_diagram':
         pass
+    elif type == 'start_recording':
+        recording_interval = float(params['rate'])
+        print('start recording data (every %.2f seconds)' % recording_interval)
+    elif type == 'stop_recording':
+        print('stop recording data')
+        recording_interval = None
     elif type == 'add_camera':
         add_camera()
     elif type == 'add_sim_sensor':
@@ -116,17 +125,17 @@ def check_devices():
     server_seqs = set([fi['name'] for fi in file_infos])
     print('server seqs: %s' % server_seqs)
 
-    # loop forever checking for new devices
+    # loop forever checking for new devices; if found, create sequences for them
     while True:
 
         # if new device found, create sequence
         for device in c.auto_devices._auto_devices:  # fix(soon): change to serial.devices()? doesn't work with sim sensors
             if hasattr(device, 'name') and device.name:
                 if device.name in server_seqs:
-                    device.store_sequence = True
+                    device.store_sequence = False  # going to do in main loop below
                 else:
                     create_sequence(server_path, device.name, data_type=1)  # data_type 1 is numeric
-                    device.store_sequence = True
+                    device.store_sequence = False  # going to do in main loop below
                     server_seqs.add(device.name)
 
         # sleep for a bit
@@ -152,10 +161,15 @@ def add_camera():
 
 # run enabled data flow(s)
 def start():
+    global last_record_time
     while True:
         if diagram:
+
+            # update diagram values
             update_camera_blocks()
             diagram.update()
+
+            # send values to server and actuators
             values = {}
             for block in diagram.blocks:
                 value = None
@@ -180,6 +194,17 @@ def start():
                             device.send_command('set %d' % value)
 
             c.send_message('update_diagram', {'values': values})
+
+            # send sequence values
+            current_time = time.time()
+            if recording_interval and ((last_record_time is None) or current_time > last_record_time + recording_interval):
+                for block in diagram.blocks:
+                    if not block.input_type:
+                        c.update_sequence(block.name, block.value)
+                        print 'update sequence', block.name, block.value
+                last_record_time = current_time
+
+        # sleep until it is time to do another update
         c.sleep(1)
 
 
