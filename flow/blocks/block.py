@@ -7,23 +7,24 @@ class Block(object):
     __metaclass__ = abc.ABCMeta
 
     # create a block using a block spec dictionary
-    def __init__(self, block_spec):
-        self.id = block_spec['id']
-        self.name = block_spec['name']
-        self.type = block_spec['type']
-        self.source_ids = block_spec['sources']
-        self.required_source_count = block_spec['input_count']
-        self.value = block_spec.get('value', None)
-        self.params = block_spec.get('params', {})
-        self.input_type = block_spec['input_type']
-        self.output_type = block_spec['output_type']
-        self.decimal_places = block_spec.get('decimal_places', None)
-        if self.value is not None and (not self.output_type == 'i'):  # if not image
-            self.decimal_places = self.compute_decimal_places(self.value)
-            self.value = float(self.value)  # fix(later): handle non-numeric types?
-        self.sources = []
-        self.dest_ids = []
-        self.stale = True
+    def __init__(self, block_spec=None):
+        if block_spec is not None:
+            self.id = block_spec['id']
+            self.name = block_spec['name']
+            self.type = block_spec['type']
+            self.source_ids = block_spec['sources']
+            self.required_source_count = block_spec['input_count']
+            self.value = block_spec.get('value', None)
+            self.params = block_spec.get('params', {})
+            self.input_type = block_spec['input_type']
+            self.output_type = block_spec['output_type']
+            self.decimal_places = block_spec.get('decimal_places', None)
+            if self.value is not None and (not self.output_type == 'i'):  # if not image
+                self.decimal_places = self.compute_decimal_places(self.value)
+                self.value = float(self.value)  # fix(later): handle non-numeric types?
+            self.sources = []
+            self.dest_ids = []
+            self.stale = True
         
     def is_numeric(self):
         return not self.output_type == 'i'
@@ -45,13 +46,16 @@ class Block(object):
         if source_values_length > 0 and source_values_length >= self.required_source_count:
             self.value = self.compute(source_values, self.params)
             if self.is_numeric() and self.value is not None:
-                # Convert decimal places, so quanitize can be used for accurate rounding
-                # 6 decimal places -> .000001 = decimal_exp
-                # 2 decimal places -> .01 = decimal_exp
-                decimal_exp = Decimal(10) ** (-1 * self.decimal_places)
-                self.value = float(Decimal(str(self.value)).quantize(decimal_exp, rounding=ROUND_HALF_UP))
+                self.value = round(self.value, self.decimal_places)
         else:
             self.value = None
+
+    def round(self, value, decimal_places):
+        # Convert decimal places, so quanitize can be used for accurate rounding
+        # 6 decimal places -> .000001 = decimal_exp
+        # 2 decimal places -> .01 = decimal_exp
+        decimal_exp = Decimal(10) ** (-1 * decimal_places)
+        return float(Decimal(str(value)).quantize(decimal_exp, rounding=ROUND_HALF_UP))
 
     # compute a new value for this block (assuming it has inputs/sources)
     def update(self):

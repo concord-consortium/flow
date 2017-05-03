@@ -2,12 +2,13 @@ import pytest
 import PIL
 from rhizo.extensions.camera import encode_image
 
-from ..filters.brightness import Brightness
-from ..filters.blur import Blur
+from flow.blocks.filters.brightness import Brightness
+from flow.blocks.filters.blur import Blur
+from flow.blocks.filters.smoothing import Smoothing
 
-
-brightness = Brightness()
-blur = Blur()
+brightness = Brightness(None)
+blur = Blur(None)
+smoothing = Smoothing(None)
 
 
 def test_brightness_range_mid_value():
@@ -48,3 +49,41 @@ def test_blur_pillow_image_returned():
     image = blur.compute(inputs, params)
     assert isinstance(image, PIL.Image.Image) is False
     assert isinstance(image, (str, unicode)) is True
+
+
+def test_smoothing_values():
+    data = [12.44, 17.1, 11.15, 12.38, 13.22,
+            16.87, 16.14, 14.22, 13.08, 10.27]
+    for item in data:
+        moving_average = smoothing.round(smoothing.compute([item], None), 3)
+    assert moving_average == 13.687
+
+    smoothing.period_history = [13.54]
+    data = [16.17, 11.25, 16.52, 14.87]
+    for item in data:
+        moving_average = smoothing.round(smoothing.compute([item], None), 2)
+    assert moving_average == 14.47
+
+    smoothing.period_history = []
+    data = [16.17]
+    for item in data:
+        moving_average = smoothing.round(smoothing.compute([item], None), 2)
+    assert moving_average == 16.17
+
+    smoothing.period_history = [11.7, 14.92]
+    data = [14.29, 14.71, 10.97, 17.7, 15.86, 14.63, 16.02, 13.29]
+    for item in data:
+        moving_average = smoothing.round(smoothing.compute([item], None), 3)
+    assert moving_average == 14.409
+
+    smoothing.period_history = []
+    data = [16.17, 13.54, 11.25, 16.52, 14.87, 12.93, 13.18, 12.95, 10.09]
+    for item in data:
+        moving_average = smoothing.round(smoothing.compute([item], None), 1)
+    assert moving_average == 13.5
+
+    smoothing.period_history = []
+    data = [16.17, 13.54, 11.25, 16.52]
+    for item in data:
+        moving_average = smoothing.round(smoothing.compute([item], None), 2)
+    assert moving_average == 14.37

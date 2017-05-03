@@ -16,5 +16,5 @@ class Smoothing(Filter):
             self.period_history.pop(0)  # pop first item in the list
             period_history_length = period_history_length - 1
         self.period_history.append(result)
-        moving_average = sum(iter(self.period_history))/(period_history_length + 1)
+        moving_average = sum(iter(self.period_history)) / (period_history_length + 1)
         return moving_average

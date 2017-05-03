@@ -3,7 +3,6 @@ import base64
 import cStringIO
 from PIL import Image
 from ..block import Block
-# from blocks.block import Block
 
 
 class Filter(Block):
