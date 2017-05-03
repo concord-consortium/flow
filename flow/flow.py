@@ -16,7 +16,7 @@ from diagram import Diagram
 diagram = None  # the currently running diagram (if any)
 last_user_message_time = None  # the last user message time (if any)
 last_camera_store_time = None  # the last camera sequence update time (if any)
-
+block_types = None
 
 # handle messages from server (sent via websocket)
 def message_handler(type, params):
@@ -27,6 +27,9 @@ def message_handler(type, params):
         print 'list_devices'
         for device in c.auto_devices._auto_devices:
             c.send_message('device_added', device.as_dict())
+    elif type == 'request_block_types':
+        block_types = hjson.loads(open('../block_types.hjson').read())
+        c.send_message('block_types', block_types)
     elif type == 'list_diagrams':
         c.send_message('diagram_list', {'diagrams': list_diagrams()})
     elif type == 'save_diagram':
