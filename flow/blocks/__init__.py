@@ -1,13 +1,15 @@
 from filters.blur import Blur
 from filters.brightness import Brightness
 from filters.operator import Operator
-from filters.smoothing import Smoothing
+from filters.sma import SimpleMovingAverage
+from filters.ema import ExponentialMovingAverage
 from block import Block
 
 non_operator_blocks = {
     'blur': Blur,
     'brightness': Brightness,
-    'smoothing': Smoothing
+    'simple moving average': SimpleMovingAverage,
+    'exponential moving average': ExponentialMovingAverage
 }
 
 
