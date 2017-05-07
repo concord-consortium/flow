@@ -101,15 +101,19 @@ def send_status():
 
 # create a sequence resource on the server
 # data types: 1 = numeric, 2 = text, 3 = image
-def create_sequence(server_path, name, data_type):
+def create_sequence(server_path, name, data_type, units = None):
     print('creating new sequence: %s' % name)
-    file_info = {
+    print 'units', units
+    sequence_info = {
         'path': server_path,
         'name': name,
         'type': 21,  # sequence
         'data_type': data_type,
+        'min_storage_interval': 0,
     }
-    c.resources.send_request_to_server('POST', '/api/v1/resources', file_info)
+    if units:
+        sequence_info['units'] = units
+    c.resources.send_request_to_server('POST', '/api/v1/resources', sequence_info)
 
 
 # check for new devices and create sequences for them
@@ -131,7 +135,7 @@ def check_devices():
                 if device.name in server_seqs:
                     device.store_sequence = False  # going to do in main loop below
                 else:
-                    create_sequence(server_path, device.name, data_type=1)  # data_type 1 is numeric
+                    create_sequence(server_path, device.name, data_type=1, units=device.units)  # data_type 1 is numeric
                     device.store_sequence = False  # going to do in main loop below
                     server_seqs.add(device.name)
 
