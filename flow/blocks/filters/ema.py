@@ -21,9 +21,7 @@ class ExponentialMovingAverage(Filter):
 
         last_average = result
         alpha = 2.0 / (moving_average_periods + 1.0)
-        print self.period_history
         for item in self.period_history:
-            print "AVERAGE: ", item, alpha, last_average, (1.0-alpha)
             last_average = (item * alpha) + (last_average * (1.0-alpha))
 
         return last_average

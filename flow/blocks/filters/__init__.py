@@ -23,9 +23,10 @@ class Filter(Block):
 
     # a helper function for reading from a list of parameters
     def read_param(self, params, name, default=None):
-        param = self.read_param_obj(params, name)
-        if param:
-            return param['value']
+        if params is not None:
+            param = self.read_param_obj(params, name)
+            if param:
+                return param['value']
         return default
 
     def read_param_obj(self, params, name):
