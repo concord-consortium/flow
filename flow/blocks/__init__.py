@@ -14,11 +14,11 @@ non_operator_blocks = {
 
 
 def createBlock(block_spec):
-    type = block_spec.get('type', None)
+    name = block_spec.get('name', None)
     block = None
-
+    print block_spec
     if type is not None:
-        class_definition = non_operator_blocks.get(type.lower(), None)
+        class_definition = non_operator_blocks.get(name.lower(), None)
         if class_definition is None:
             class_definition = Operator
         block = class_definition(block_spec)

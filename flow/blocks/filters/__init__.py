@@ -22,11 +22,11 @@ class Filter(Block):
         return outImage
 
     # a helper function for reading from a list of parameters
-    def read_param(self, params, name):
+    def read_param(self, params, name, default=None):
         param = self.read_param_obj(params, name)
         if param:
             return param['value']
-        return None
+        return default
 
     def read_param_obj(self, params, name):
         for param in params:
