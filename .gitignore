@@ -3,3 +3,9 @@ diagrams
 local.hjson
 *~
 *.pyc
+.cache
+bin
+include
+lib
+.Python
+pip-selfcheck.json

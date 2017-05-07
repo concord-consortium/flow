@@ -1,5 +1,5 @@
 import pytest
-from ..diagram import Block, compute_decimal_places
+from flow.blocks.block import Block
 
 temperature_block = Block({
             'id': 1,
@@ -42,6 +42,6 @@ def test_compute_value():
 
 
 def test_compute_decimal_places():
-    assert compute_decimal_places("1e-11") == 11
-    assert compute_decimal_places("12341.9201") == 4
-    assert compute_decimal_places(".000") == 3
+    assert numeric_block.compute_decimal_places("1e-11") == 11
+    assert temperature_block.compute_decimal_places("12341.9201") == 4
+    assert numeric_block.compute_decimal_places(".000") == 3

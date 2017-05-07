@@ -4,6 +4,8 @@ from rhizo.extensions.camera import encode_image
 
 
 class Blur(Filter):
+    def __init__(self, block_spec):
+        super(Blur, self).__init__(block_spec)
 
     def compute(self, inputs, params):
         image_string = inputs[0]
