@@ -211,7 +211,7 @@ def start():
             if recording_interval and ((last_record_time is None) or current_time > last_record_time + recording_interval):
                 for block in diagram.blocks:
                     if not block.input_type:
-                        c.update_sequence(block.name, block.value)
+                        send_message('update_sequence', {'sequence': block.name, 'value': block.value})
                         print 'update sequence', block.name, block.value
                 last_record_time = current_time
 
@@ -235,7 +235,7 @@ def update_camera_blocks():
             current_time = time.time()
             if not last_camera_store_time or current_time > last_camera_store_time + 60:
                 image.thumbnail((720, 540), Image.ANTIALIAS)
-                c.update_sequence('image', encode_image(image))
+                send_message('update_sequence', {'sequence': 'image', 'value': encode_image(image)})
                 last_camera_store_time = current_time
                 logging.debug('updating image sequence')
 
