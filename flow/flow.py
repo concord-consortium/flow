@@ -1,5 +1,6 @@
 import time
 import logging
+import hjson
 import gevent
 from PIL import Image
 from rhizo.main import c
@@ -19,6 +20,7 @@ last_camera_store_time = None  # the last camera sequence update time (if any)
 last_record_time = None  # timestamp of last values recorded to long-term storage
 recording_interval = None  # number of seconds between storing values in long-term storage
 
+
 # handle messages from server (sent via websocket)
 def message_handler(type, params):
     global diagram
@@ -28,12 +30,12 @@ def message_handler(type, params):
     if type == 'list_devices':
         print 'list_devices'
         for device in c.auto_devices._auto_devices:
-            c.send_message('device_added', device.as_dict())
+            send_message('device_added', device.as_dict())
     elif type == 'request_block_types':
-        block_types = hjson.loads(open('../block_types.hjson').read())
-        c.send_message('block_types', block_types)
+        block_types = hjson.loads(open('block_types.hjson').read())
+        send_message('block_types', block_types)
     elif type == 'list_diagrams':
-        c.send_message('diagram_list', {'diagrams': list_diagrams()})
+        send_message('diagram_list', {'diagrams': list_diagrams()})
     elif type == 'save_diagram':
         save_diagram(params['name'], params['diagram'])
     elif type == 'rename_diagram':
@@ -76,6 +78,14 @@ def message_handler(type, params):
     return used
 
 
+# a wrapper used to send messages to server or BLE
+def send_message(type, parameters):
+    if c.config.get('enable_ble', False):
+        pass  # TODO: send to BLE bridge
+    else:
+        c.send_message(type, parameters)
+
+
 # handle an incoming value from a sensor device (connected via USB)
 def input_handler(name, values):
     if diagram:
@@ -96,7 +106,7 @@ def send_status():
     if diagram:
         status['current_diagram'] = diagram.name
 
-    c.send_message('status', status)
+    send_message('status', status)
 
 
 # create a sequence resource on the server
@@ -148,7 +158,7 @@ def add_camera():
     if hasattr(c, 'camera'):
         c.camera.open()
         if c.camera.device and c.camera.device.is_connected():
-            c.send_message('device_added', {'type': 'camera', 'name': 'camera', 'dir': 'in'})
+            send_message('device_added', {'type': 'camera', 'name': 'camera', 'dir': 'in'})
 
             # create image sequence on server if doesn't already exist
             server_path = c.path_on_server()
@@ -194,7 +204,7 @@ def start():
                         if value is not None:
                             device.send_command('set %d' % value)
 
-            c.send_message('update_diagram', {'values': values})
+            send_message('update_diagram', {'values': values})
 
             # send sequence values
             current_time = time.time()
