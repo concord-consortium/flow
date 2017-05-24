@@ -95,6 +95,11 @@ def input_handler(name, values):
             block.value = float(values[0])
 
 
+# record data by sending it to the server and/or storing it localling
+def record_data(block_name, value):
+    send_message('update_sequence', {'sequence': block_name, 'value': value})
+
+
 # send client info to server/browser
 def send_status():
     status = {
@@ -211,8 +216,7 @@ def start():
             if recording_interval and ((last_record_time is None) or current_time > last_record_time + recording_interval):
                 for block in diagram.blocks:
                     if not block.input_type:
-                        send_message('update_sequence', {'sequence': block.name, 'value': block.value})
-                        print 'update sequence', block.name, block.value
+                        record_data(block.name, block.value)
                 last_record_time = current_time
 
         # sleep until it is time to do another update
