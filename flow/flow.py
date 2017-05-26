@@ -9,9 +9,53 @@ from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_d
 from diagram_storage import list_diagrams, load_diagram, save_diagram, rename_diagram, delete_diagram
 from diagram import Diagram
 
+import json
 
 # this file is the main program for the data flow client running on a controller (e.g. Raspberry Pi)
 
+### --------------- Start of MQTT and Store init
+
+publisher = None
+store = None
+
+# --- MQTT integration
+def init_mqtt():
+    """Initialize mqtt.
+    """
+    global publisher
+    # mqtt integration
+    try:
+        from mqttclient import MqttPublisher
+        #TODO: load mqTopic from config. It has to be the same 
+        # --- as in gattserver/hpserver.py
+        mqTopic = "flow/ble"
+        publisher = MqttPublisher(mqTopic)
+        publisher.start()
+        print("MQTT Initialized.")
+        #logging.info("MQTT Initialized.")
+    except:
+        #logging.error("Can't initialize MQTT. Probably some components not installed. MQTT publish will be disabled.")
+        print("Can't initialize MQTT. Probably some components not installed. MQTT publish will be disabled.")
+
+# --- store integration
+def init_store():
+    """Initialize store."""
+    global store
+    try:
+        from influxstore import Store
+        # TODO load pin for this device
+        mypin = '2671'
+        # open store to flow database
+        store = Store(database="flow", pin=mypin)
+        print("Influxdb store Initialized.")
+    except:
+        print("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled.")
+
+# call init functions. if they fail, mqtt, store resp. will be noop
+init_mqtt()
+init_store()
+
+### --------------- End of MQTT and Store init
 
 # global variables
 diagram = None  # the currently running diagram (if any)
@@ -80,9 +124,26 @@ def message_handler(type, params):
 
 # a wrapper used to send messages to server or BLE
 def send_message(type, parameters):
-    if c.config.get('enable_ble', False):
-        pass  # TODO: send to BLE bridge
+    """Send message to websocket and/or ble.
+    Currently, we support two modes:
+     - websocket
+     - websocket plus ble
+
+    if elable_ble is set in config, we send to both ble (via mqtt) and websocket (via c._send_message).
+    Otherwise, we send to websocket only via c.send_message
+    """
+    if c.config.get('enable_ble', False) and publisher:
+        # update_sequence not needed by ble, only by store
+        if type != "update_sequence":
+            jsonobj = {"type": type, "parameters": parameters }
+            #jsonmsg = '{"type":"sensor_update","parameters":{"values":[388.0],"name":"light"}}'
+            jsonmsg = json.dumps(jsonobj)
+            #logging.debug('mqtt published : %s' % jsonmsg)
+            publisher.publish(jsonmsg)
+        # also send message to websocket
+        c.send_message(type, parameters)
     else:
+        # send message to websocket
         c.send_message(type, parameters)
 
 
@@ -91,12 +152,21 @@ def input_handler(name, values):
     if diagram:
         block = diagram.find_block_by_name(name)
         if block:
+            #logging.debug('input_handler: name=%s, values[0]=%s' % (name, values[0]))
             block.decimal_places = block.compute_decimal_places(values[0])
             block.value = float(values[0])
 
 
 # record data by sending it to the server and/or storing it localling
 def record_data(block_name, value):
+    # publish to recording queue to be saved by storage service or save directly
+    # store block_name and value into 'sensor' measurement
+    # perform store only if store has been initialized properly
+    if store:
+        try:
+            store.save('sensor', block_name, value)
+        except Exception as err:
+            logging.error("store.save error: %s" % err)
     send_message('update_sequence', {'sequence': block_name, 'value': value})
 
 
@@ -178,6 +248,8 @@ def add_camera():
 # run enabled data flow(s)
 def start():
     global last_record_time
+    #init_mqtt()
+    #init_store()
     while True:
         if diagram:
 
@@ -189,6 +261,7 @@ def start():
             values = {}
             for block in diagram.blocks:
                 value = None
+                #logging.debug('flow.start loop: block=%s' % block)
                 if block.output_type == 'i':  # only send camera/image updates if recent message from user
                     if last_user_message_time and time.time() < last_user_message_time + 300:
                         value = block.value
@@ -209,6 +282,7 @@ def start():
                         if value is not None:
                             device.send_command('set %d' % value)
 
+            #logging.debug('flow.start loop: values=%s' % values)
             send_message('update_diagram', {'values': values})
 
             # send sequence values
