@@ -2,6 +2,8 @@
 import time
 import json
 import logging
+from dateutil.parser import parse
+import numbers
 
 # external imports
 import hjson
@@ -21,6 +23,9 @@ class Flow(object):
 
     def __init__(self):
         self.diagram = None  # the currently running diagram (if any)
+        # used to perform always save history for each non-sim sensor
+        #   at sensor raw reading interval 
+        self.integ_test = False
         self.publisher = None
         self.store = None
         self.last_user_message_time = None  # the last user message time (if any)
@@ -37,8 +42,19 @@ class Flow(object):
             self.diagram = Diagram(name, diagram_spec)
 
         # call init functions. if they fail, mqtt, store resp. will be noop
-        self.init_mqtt()
-        self.init_store()
+        if c.config.get('enable_ble', False):
+            #print('init_mqtt')
+            self.init_mqtt()
+        else:
+            #print('no init_mqtt')
+            logging.info("MQTT and BLE disabled.")
+
+        if c.config.get('enable_store', False):
+            #print('init_store')
+            self.init_store()
+        else:
+            #print('no init_store')
+            logging.info("Store disabled.")
 
     # MQTT integration
     def init_mqtt(self):
@@ -50,11 +66,11 @@ class Flow(object):
             mq_topic = "flow/ble"
             self.publisher = MqttPublisher(mq_topic)
             self.publisher.start()
-            print("MQTT Initialized.")
-            #logging.info("MQTT Initialized.")
+            #print("MQTT Initialized.")
+            logging.info("MQTT Initialized.")
         except:
-            #logging.error("Can't initialize MQTT. Probably some components not installed. MQTT publish will be disabled.")
-            print("Can't initialize MQTT. Probably some components not installed. MQTT publish will be disabled.")
+            logging.error("Can't initialize MQTT. Probably some components not installed. MQTT publish will be disabled.")
+            #print("Can't initialize MQTT. Probably some components not installed. MQTT publish will be disabled.")
 
     # store integration
     def init_store(self):
@@ -65,9 +81,9 @@ class Flow(object):
             my_pin = '2671'
             # open store to flow database
             self.store = Store(database="flow", pin=my_pin)
-            print("Influxdb store Initialized.")
+            logging.info("Influxdb store Initialized.")
         except:
-            print("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled.")
+            logging.error("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled.")
 
     # run the current diagram (if any); this is the main loop of the flow program
     def start(self):
@@ -123,12 +139,112 @@ class Flow(object):
             c.sleep(1)
 
     # handle messages from server (sent via websocket)
+    def _calcAutoInterval(self, start, end):
+        """Calculate automatic interval.
+          About 120 records should fit in start/end range.
+
+          :param start: start of history range for which interval is calculated
+          :param end: end of history range for which interval is calculated
+          :return: string compatible with influxdb group by interval, e.g. 5s, 1m, 60m
+                   or None if auto interval is < 1m and no grouping needs to be done
+        """
+        ret = None
+        try:
+            start = parse(start)
+            end = parse(end)
+            diff = end - start
+            #interval_diff = diff/120
+            total_seconds = diff.total_seconds() 
+            if total_seconds <= 600:
+                # < 10m
+                ret = None
+            elif total_seconds <= 3600:
+                # < 1h and < 10m
+                ret = "1m"
+            elif total_seconds <= 24*3600:
+                # > 1h and < 1d
+                # 48 records max
+                ret = "30m"
+            elif total_seconds <= 7*24*3600:
+                # > 1d and < 7d
+                # 84 records max
+                ret = "4h"
+            elif total_seconds <= 30*24*3600:
+                # > 7d and < 30d
+                # 120 records max
+                ret = "8h"
+        except Exception as err:
+            # Can't parse: return default (None)
+            ret = None
+        return ret
+        
+
+    # handle messages from server (sent via websocket)
     def handle_message(self, type, params):
+        #logging.debug('handle_message: %s %s' % (type, params))
         used = True
         if type == 'list_devices':
             print 'list_devices'
             for device in c.auto_devices._auto_devices:
                 self.send_message('device_added', device.as_dict())
+
+        elif type == 'history':
+            # history is currently only used for sending local history
+            #  over ble
+            #  Sample parameters for type history: {u'count': 100000, u'start_timestamp': u'2017-06-15T23:50:19.567Z', 
+            #    u'name': u'temperature', u'end_timestamp': u'2017-06-16T00:00:19.567Z'}
+            history = []
+            if self.store:
+                name = params.get("name")
+                start = params.get("start_timestamp")
+                end = params.get("end_timestamp")
+                count = params.get("count")
+                # auto interval allows for automatic adjustment of history timestamp interval
+                #   so that it fits into ble packet (< 120 records)
+                autoInterval = params.get("autoInterval")
+                interval = None
+                if autoInterval is None:
+                    autoInterval = True
+                if autoInterval:
+                    #
+                    interval = self._calcAutoInterval(start, end)
+                    #
+                try:
+                    if interval:
+                        query = \
+                          """SELECT mean(mean) from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' group by time(%s) limit %s""" % \
+                          (name, start, end, interval, count) 
+                    else:
+                        query = \
+                          """SELECT mean from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' limit %s""" % \
+                          (name, start, end, count) 
+                    logging.debug("interval=%s, query=%s" % (interval, query))
+                    rs = self.store.query(query)
+
+                    # sample data:
+                    # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
+                    #  u'max': 245, u'time': u'2017-06-16T20:42:00Z', u'mean': 244.8}, ...
+  
+                    points = list(rs.get_points())
+                    #logging.debug("%d points: first 10: %s" % (len(points), points[:10]))
+
+                    if c.config.get('enable_ble', False) and self.publisher:
+                        # extract rounded numbers for 'mean' field
+                        values = [round(x['mean'],2) if isinstance(x['mean'], numbers.Number) else x['mean']  for x in points]
+                        timestamps = [x['time'] for x in points]
+                        if not values:
+                            values = [0,0]
+                            timestamps = [start, end]
+                        jsonobj = {"type": type, "parameters": { "name": name, 
+                          "values": values, "timestamps": timestamps }
+                        }
+                        #jsonmsg = '{"type":"sensor_update","parameters":{"values":[388.0],"name":"light"}}'
+                        jsonmsg = json.dumps(jsonobj)
+                        #logging.debug('mqtt published : %s' % jsonmsg)
+                        self.publisher.publish(jsonmsg)
+                except Exception as err:
+                    logging.error("store.query error: %s" % err)
+            #self.send_message('history', {'values': history})
         elif type == 'request_block_types':
             block_types = hjson.loads(open('block_types.hjson').read())
             self.send_message('block_types', block_types)
@@ -185,6 +301,7 @@ class Flow(object):
         if elable_ble is set in config, we send to both ble (via mqtt) and websocket (via c._send_message).
         Otherwise, we send to websocket only via c.send_message
         """
+        logging.debug('send_message type=%s' % type)
         if c.config.get('enable_ble', False) and self.publisher:
             # update_sequence not needed by ble, only by store
             if type != "update_sequence":
@@ -192,6 +309,7 @@ class Flow(object):
                 #jsonmsg = '{"type":"sensor_update","parameters":{"values":[388.0],"name":"light"}}'
                 jsonmsg = json.dumps(jsonobj)
                 #logging.debug('mqtt published : %s' % jsonmsg)
+                #if not self.integ_test:
                 self.publisher.publish(jsonmsg)
             # also send message to websocket
             c.send_message(type, parameters)
@@ -201,10 +319,27 @@ class Flow(object):
 
     # handle an incoming value from a sensor device (connected via USB)
     def handle_input(self, name, values):
+        #logging.debug('input_handler: name=%s, values[0]=%s' % (name, values[0]))
+        # ---- start of send_message replacement (store and ble test without diagram open)
+        if self.integ_test:
+            if self.store:
+                value = float(values[0])
+                try:
+                    self.store.save('sensor', name, value)
+                except Exception as err:
+                    logging.error("store.save error: %s" % err)
+            # simulate update_diagram when it was not requested by flow-server
+            #  i.e. when flow-server is not reachable after flow restart
+            #if self.publisher:
+            #    jsonobj = {"type": "update_diagram", "parameters": {'values': { '1': value}}}
+            #    jsonmsg = json.dumps(jsonobj)
+            #    #logging.debug('mqtt published : %s' % jsonmsg)
+            #    self.publisher.publish(jsonmsg)
+        # ---- end of of send_message replacement
+
         if self.diagram:
             block = self.diagram.find_block_by_name(name)
             if block:
-                #logging.debug('input_handler: name=%s, values[0]=%s' % (name, values[0]))
                 block.decimal_places = block.compute_decimal_places(values[0])
                 block.value = float(values[0])
 
@@ -213,11 +348,13 @@ class Flow(object):
         # publish to recording queue to be saved by storage service or save directly
         # store block_name and value into 'sensor' measurement
         # perform store only if store has been initialized properly
-        if self.store:
-            try:
-                self.store.save('sensor', block_name, value)
-            except Exception as err:
-                logging.error("store.save error: %s" % err)
+        if not self.integ_test:
+            if self.store:
+                try:
+                    logging.debug("record_data: %s=%s" % (block_name, value))
+                    self.store.save('sensor', block_name, value)
+                except Exception as err:
+                    logging.error("store.save error: %s" % err)
         self.send_message('update_sequence', {'sequence': block_name, 'value': value})
 
     # send client info to server/browser
