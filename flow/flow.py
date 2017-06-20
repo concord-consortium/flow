@@ -32,29 +32,62 @@ class Flow(object):
         self.last_camera_store_time = None  # the last camera sequence update time (if any)
         self.last_record_time = None  # timestamp of last values recorded to long-term storage
         self.recording_interval = None  # number of seconds between storing values in long-term storage
+        self.run_name = "Noname"  # name of run for which recording is being saved
+
         c.add_message_handler(self)  # register to receive messages from server/websocket
         c.auto_devices.add_input_handler(self)
 
         # load last diagram on startup
+        # TODO: decide to use this or self.store("diagram"...) below
         if c.config.get('startup_diagram', ''):
             name = c.config.startup_diagram
             diagram_spec = load_diagram(name)
+            logging.debug("Flow.__init__: loading diagram: %s" % name)
             self.diagram = Diagram(name, diagram_spec)
+       
 
         # call init functions. if they fail, mqtt, store resp. will be noop
         if c.config.get('enable_ble', False):
-            #print('init_mqtt')
             self.init_mqtt()
+            #logging.info("MQTT initialized.")
         else:
-            #print('no init_mqtt')
-            logging.info("MQTT and BLE disabled.")
+            logging.warning("MQTT and BLE disabled.")
 
         if c.config.get('enable_store', False):
-            #print('init_store')
             self.init_store()
+            # if store enabled, restore recording_interval
+            rs = self.store.query("select * from run order by time desc limit 2")
+            points = list(rs.get_points())
+            logging.debug("Flow.__init__: run points: %s" % points)
+            if points:
+                point = points[0]
+                if point.get("action") == "start":
+                    logging.info("Flow.__init__: loading last run info: %s" % point)
+                    # last action was start, not stop: load name and interval
+                    self.recording_interval = point.get("value")
+                    self.run_name = point.get("name")
+            # sample data:
+            # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
+            #  u'max': 245, u'time': u'2017-06-16T20:42:00Z', u'mean': 244.8}, ...
+
+            # if diagram not loaded from hardcoded config, load from influxdb 'diagram' measurement
+            if not self.diagram:
+                rs = self.store.query("select * from diagram order by time desc limit 2")
+                points = list(rs.get_points())
+                logging.debug("Flow.__init__: diagram points: %s" % points)
+                if points:
+                    point = points[0]
+                    if point.get("action") == "start":
+                        #logging.info("Flow.__init__: loading last diagram: %s" % point)
+                        name = point.get("name")
+                        try:
+                            diagram_spec = load_diagram(name)
+                            logging.debug("Flow.__init__: loading diagram: %s" % name)
+                            self.diagram = Diagram(name, diagram_spec)
+                        except Exception as err:
+                            logging.warning("Flow.__init__: can't load diagram %s: %s" % (name, err))
         else:
-            #print('no init_store')
-            logging.info("Store disabled.")
+            logging.warning("Store disabled.")
 
     # MQTT integration
     def init_mqtt(self):
@@ -260,18 +293,31 @@ class Flow(object):
             diagram_spec = params['diagram']
             self.diagram = Diagram('_temp_', diagram_spec)
         elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
+            logging.debug("handle_meaage: start_diagram - loading diagram: %s" % params['name'])
             diagram_spec = load_diagram(params['name'])
             self.diagram = Diagram(params['name'], diagram_spec)
             #local_config = hjson.loads(open('local.hjson').read())  # save name of diagram to load when start script next time
             #local_config['startup_diagram'] = params['name']
             #open('local.hjson', 'w').write(hjson.dumps(local_config))
+            if self.store:
+                self.store.save('diagram', params['name'], 0, {'action': 'start'})
+
         elif type == 'stop_diagram':
             pass
         elif type == 'start_recording':
             self.recording_interval = float(params['rate'])
-            print('start recording data (every %.2f seconds)' % self.recording_interval)
+            self.run_name = params.get('name')
+            if not self.run_name:
+                self.run_name = "Noname"
+            logging.info('start recording data (every %.2f seconds)' % self.recording_interval)
+            if self.store:
+                # save start for named run, (Noname if not given)
+                self.store.save('run', self.run_name, self.recording_interval, {'action': 'start'})
         elif type == 'stop_recording':
-            print('stop recording data')
+            logging.info('stop recording data')
+            if self.store:
+                # save stop for current run
+                self.store.save('run', self.run_name, self.recording_interval, {'action': 'stop'})
             self.recording_interval = None
         elif type == 'add_camera':
             self.add_camera()
@@ -301,7 +347,7 @@ class Flow(object):
         if elable_ble is set in config, we send to both ble (via mqtt) and websocket (via c._send_message).
         Otherwise, we send to websocket only via c.send_message
         """
-        logging.debug('send_message type=%s' % type)
+        #logging.debug('send_message type=%s' % type)
         if c.config.get('enable_ble', False) and self.publisher:
             # update_sequence not needed by ble, only by store
             if type != "update_sequence":

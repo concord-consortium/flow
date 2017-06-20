@@ -65,16 +65,21 @@ class Store(object):
     """Encapsulates influxdb store.
     """
 
-    def __init__(self, database, pin, hostname="localhost", port=8086):
+    def __init__(self, database, pin, hostname="localhost", port=None):
         self.pin = pin
         self.hostname = hostname
-        self.port = port
+        self.port = port if port else 8086
         self.database = database
         self.pin = pin
         self.dbclient = InfluxDBClient(hostname, database=database)
 
-    def save(self, measurement, name, value):
+    def save(self, measurement, name, value, extra_tags = {}):
         dt = datetime.datetime.utcnow()
+        tags = extra_tags.copy()
+        tags.update({
+                    "name": name,
+                    "pin": self.pin,
+                })
         point = {
             #"time": dt.strftime ("%Y-%m-%d %H:%M:%S.%s"),
             "time": dt,
@@ -83,12 +88,12 @@ class Store(object):
             'fields':  {
                 'value': value,
                 },
-                'tags': {
-                    "name": name,
-                    "pin": self.pin,
-                },
+            'tags': tags,
             }
         self.dbclient.write_points([point])
+
+    def save_many(self, points):
+        self.write_points(points)
  
     def query(self, querystr):
         return self.dbclient.query(querystr)
