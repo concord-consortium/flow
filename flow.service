@@ -1,0 +1,14 @@
+[Unit]
+Description=Manylabs Flow Service
+After=syslog.target network.target flowble.target influxdb.target
+
+[Service]
+Environment=PYTHONPATH=/home/pi/rhizo
+PIDFile=/var/run/flow.pid
+ExecStart=/home/pi/flow/flow.py
+Restart=on-failure
+WorkingDirectory=/home/pi/flow
+
+[Install]
+WantedBy=multi-user.target
+
