@@ -6,3 +6,4 @@ Pillow>=4.1.0
 pytest>=3.0.7
 six>=1.10.0
 ws4py>=0.4.2
+dateutil
