@@ -408,7 +408,8 @@ class Flow(object):
         status = {
             'flow_version': '0.0.1',
             'lib_version': c.VERSION + ' ' + c.BUILD,
-            'device_count': len(c.auto_devices._auto_devices)
+            'device_count': len(c.auto_devices._auto_devices),
+            'recording_interval': self.recording_interval,
         }
         if self.diagram:
             status['current_diagram'] = self.diagram.name
