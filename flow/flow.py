@@ -319,6 +319,12 @@ class Flow(object):
                 # save stop for current run
                 self.store.save('run', self.run_name, self.recording_interval, {'action': 'stop'})
             self.recording_interval = None
+        elif type == 'rename_block':
+            old_name = params['old_name']
+            new_name = params['new_name']
+            device = c.auto_devices.find_device(old_name)
+            device.name = new_name
+            rename_sequence(c.path_on_server(), old_name, new_name)  # change sequence name on server
         elif type == 'add_camera':
             self.add_camera()
         elif type == 'add_sim_sensor':
@@ -501,3 +507,9 @@ def create_sequence(server_path, name, data_type, units = None):
     if units:
         sequence_info['units'] = units
     c.resources.send_request_to_server('POST', '/api/v1/resources', sequence_info)
+
+
+# change the name of a sequence on the server
+def rename_sequence(server_path, old_name, new_name):
+    print('renaming sequence: %s -> %s' % (old_name, new_name))
+    c.resources.send_request_to_server('PUT', '/api/v1/resources' + server_path + '/' + old_name, {'name': new_name})
