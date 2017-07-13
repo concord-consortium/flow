@@ -65,13 +65,17 @@ class Store(object):
     """Encapsulates influxdb store.
     """
 
-    def __init__(self, database, pin, hostname="localhost", port=None):
+    def __init__(self, database, pin, hostname="localhost", port=None, username=None,
+          password=None):
         self.pin = pin
         self.hostname = hostname
         self.port = port if port else 8086
+        self.username = username
+        self.password = password
         self.database = database
         self.pin = pin
-        self.dbclient = InfluxDBClient(hostname, database=database)
+        print("connecting to %s:%s; username=%s, password=%s" % (self.hostname, self.port, self.username, self.password))
+        self.dbclient = InfluxDBClient(self.hostname, self.port, self.username, self.password, database=self.database)
 
     def save(self, measurement, name, value, extra_tags = {}):
         dt = datetime.datetime.utcnow()

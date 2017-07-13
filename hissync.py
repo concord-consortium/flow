@@ -41,7 +41,9 @@ def perform_bulk_transfer(from_store, to_store, measurement, sync_start, chunk_s
     :return: number of records transferred
 
     """
-
+    # limit max_count transferred when testing/developing
+    #max_count = 1000
+    max_count = 0
     current_start = sync_start.isoformat()
 
     # calculate number of points
@@ -94,6 +96,24 @@ def perform_bulk_transfer(from_store, to_store, measurement, sync_start, chunk_s
             #vmin, vmax, vmean = p['min'], p['max'], p['mean']
             tag_keys = p.keys() - non_tag_keys
             tags = dict((k, p[k]) for k in tag_keys)
+            #if verbose:
+            #    print("perform_bulk_transfer: p=%s" % p)
+            # TODO: fix this error:
+            """
+sensor_mean: performing bulk transfer of about 30759 records in chunks of max 100 records.
+perform_bulk_transfer: p={'min': 17, 'mean': 20.466666666666665, 'pin': None, 'count': None, 'max': 21, 'name': None, 'time': '2017-06-01T00:00:00Z'}
+Traceback (most recent call last):
+  File "/home/pi/flow/hissync.py", line 246, in <module>
+    rc = do_hissync(from_db, from_credentials, to_db, to_credentials, dbname, measurements, verbose=verbose)
+  File "/home/pi/flow/hissync.py", line 180, in do_hissync
+    sync_count += perform_bulk_transfer(from_store, to_store, measurement, sync_start, 100, verbose)
+  File "/home/pi/flow/hissync.py", line 99, in perform_bulk_transfer
+    fields = dict((k, float(p[k])) for k in field_keys)
+  File "/home/pi/flow/hissync.py", line 99, in <genexpr>
+    fields = dict((k, float(p[k])) for k in field_keys)
+TypeError: float() argument must be a string or a number, not 'NoneType'
+            """
+
             fields = dict((k, float(p[k])) for k in field_keys)
             target_point = {
                 "time": p['time'],
@@ -106,7 +126,10 @@ def perform_bulk_transfer(from_store, to_store, measurement, sync_start, chunk_s
         total += len(points)
         if verbose:
             print("%s: transferring: %d out of %d" % (measurement, total, count))
-
+        if max_count > 0 and total > max_count:
+            if verbose:
+                print("max_count of %d reached: exiting transfer loop" % max_count)
+            break
 
 
     if verbose:
@@ -116,7 +139,7 @@ def perform_bulk_transfer(from_store, to_store, measurement, sync_start, chunk_s
 
 
 
-def do_hissync(from_db, to_db, dbname, measurements, verbose=False):
+def do_hissync(from_db, from_credentials, to_db, to_credentials, dbname, measurements, verbose=False):
     """Do history sync.
 
     :param from_db: source db host/port as host[:port]
@@ -131,10 +154,11 @@ def do_hissync(from_db, to_db, dbname, measurements, verbose=False):
     >>> do_hissync("localhost:8086", "influx.example.com:80", "sensor_mean")
 
     """
-    fport = None
-    dport = None
+    # present default port
+    fport = 8086
+    dport = 8086
 
-    # parse arguments
+    # parse db arguments
     fhost_port = from_db.split(":")
     fhost = fhost_port[0]
     if len(fhost_port) > 1:
@@ -144,8 +168,19 @@ def do_hissync(from_db, to_db, dbname, measurements, verbose=False):
     if len(dhost_port) > 1:
         dport = dhost_port[1]
 
-    from_store = Store(dbname, "", fhost, fport)
-    to_store = Store(dbname, "", dhost, dport)
+
+    # parse credentials arguments
+    from_username = None
+    from_password = None
+    to_username = None
+    to_password = None
+    if from_credentials:
+        from_username, from_password = from_credentials.split(":")
+    if to_credentials:
+        to_username, to_password = to_credentials.split(":")
+
+    from_store = Store(dbname, "", fhost, fport, from_username, from_password)
+    to_store = Store(dbname, "", dhost, dport, to_username, to_password)
 
     # TODO: create db if it doesn't exist
     #  to_store.dbclient.create_database('flow')
@@ -153,7 +188,9 @@ def do_hissync(from_db, to_db, dbname, measurements, verbose=False):
     sync_count = 0
     for measurement in measurements:
         # get last record timestamp
-        sync_start = parse("1970-01-01T00:00:00Z")
+        # TODO: fix start default time after null tag sync fixed
+        #sync_start = parse("1970-01-01T00:00:00Z")
+        sync_start = parse("2017-06-20T00:00:00Z")
         rs = to_store.query("select * from %s order by time desc limit 1" % measurement)
         if rs:
             last_record = list(rs.get_points())[0]
@@ -165,6 +202,10 @@ def do_hissync(from_db, to_db, dbname, measurements, verbose=False):
         sync_count += perform_bulk_transfer(from_store, to_store, measurement, sync_start, 100, verbose)
     return sync_count
 
+def valid_credentials(s):
+    if s:
+        if len(s.split(":")) < 2:
+            raise argparse.ArgumentTypeError("Credentials must be in the form username:password")
 
 if __name__ == '__main__':
     """Main program for hisSync.
@@ -180,7 +221,7 @@ if __name__ == '__main__':
     python3 hissync.py localhost influxdb_main.example.com flow sensor_mean,run,diagram --verbose
 
     """
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Synchronize/replicate history/time series of an influxdb database.")
     parser.add_argument("from_db", help="source db host:port",
                         type=str)
     parser.add_argument("to_db", help="destination db host:port",
@@ -189,10 +230,26 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument("measurements", help="measurements (separated by comma if more than one)",
                         type=str)
-    parser.add_argument("-v", "--verbose", help="print progress (verbose on)", action="store_true")
+    parser.add_argument("-v", "--verbose", help="print progress (verbose on)", 
+      action="store_true")
+    parser.add_argument("-fc", "--from_credentials", 
+      type=valid_credentials,
+      help="source db username:password")
+    parser.add_argument("-tc", "--to_credentials", 
+      type=valid_credentials,
+      help="destination db username:password" )
+
     args = parser.parse_args()
+
     from_db, to_db, dbname, measurements_str, verbose = \
       args.from_db, args.to_db, args.dbname, args.measurements, args.verbose
+
+    from_credentials = args.from_credentials
+    to_credentials = args.to_credentials
+    # TODO: fix credentials
+    to_credentials = "flow:flow4ever"
+
+
 
     measurements = measurements_str.split(",")
 
@@ -202,7 +259,9 @@ if __name__ == '__main__':
     #measurements = ["sensor_mean"]
     #measurements = ["sensor_mean", "run", "diagram"]
     #verbose = True
-    rc = do_hissync(from_db, to_db, dbname, measurements, verbose=verbose)
+    if verbose:
+        print("from_credentials=%s, to_credentials=%s" % (from_credentials, to_credentials))
+    rc = do_hissync(from_db, from_credentials, to_db, to_credentials, dbname, measurements, verbose=verbose)
     if rc > 0:
         ret = 0
     else:
