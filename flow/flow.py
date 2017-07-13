@@ -17,6 +17,8 @@ from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_d
 from diagram_storage import list_diagrams, load_diagram, save_diagram, rename_diagram, delete_diagram
 from diagram import Diagram
 
+# threshold for idle use messages indicating to stop sending update messages
+IDLE_STOP_UPDATE_THRESHOLD = 5 * 60.0
 
 # The Flow class holds the state and control code for the data flow client program (running on a RasPi or similar).
 class Flow(object):
@@ -115,8 +117,9 @@ class Flow(object):
             # open store to flow database
             self.store = Store(database="flow", pin=my_pin)
             logging.info("Influxdb store Initialized.")
-        except:
-            logging.error("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled.")
+        except Exception as err:
+            logging.error("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled: %s" % \
+              err)
 
     # run the current diagram (if any); this is the main loop of the flow program
     def start(self):
@@ -158,7 +161,12 @@ class Flow(object):
                                 device.send_command('set %d' % value)
 
                 #logging.debug('flow.start loop: values=%s' % values)
-                self.send_message('update_diagram', {'values': values})
+                if self.last_user_message_time and (time.time() - self.last_user_message_time < IDLE_STOP_UPDATE_THRESHOLD):
+                    #logging.debug("IDLE_STOP_UPDATE_THRESHOLD passed")
+                    self.send_message('update_diagram', {'values': values})
+                else:
+                    pass
+                    #logging.debug("IDLE_STOP_UPDATE_THRESHOLD failed")
 
                 # send sequence values
                 current_time = time.time()
@@ -306,7 +314,7 @@ class Flow(object):
             pass
         elif type == 'start_recording':
             self.recording_interval = float(params['rate'])
-            self.run_name = params.get('name')
+            self.run_name = params.get('run_name')
             if not self.run_name:
                 self.run_name = "Noname"
             logging.info('start recording data (every %.2f seconds)' % self.recording_interval)
@@ -408,7 +416,8 @@ class Flow(object):
         status = {
             'flow_version': '0.0.1',
             'lib_version': c.VERSION + ' ' + c.BUILD,
-            'device_count': len(c.auto_devices._auto_devices)
+            'device_count': len(c.auto_devices._auto_devices),
+            'recording_interval': self.recording_interval,
         }
         if self.diagram:
             status['current_diagram'] = self.diagram.name
