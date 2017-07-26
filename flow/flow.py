@@ -66,7 +66,7 @@ class Flow(object):
                 if point.get("action") == "start":
                     logging.info("Flow.__init__: loading last run info: %s" % point)
                     # last action was start, not stop: load name and interval
-                    self.recording_interval = point.get("value")
+                    self.recording_interval = int(point.get("value"))
                     self.run_name = point.get("name")
             # sample data:
             # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
@@ -313,7 +313,7 @@ class Flow(object):
         elif type == 'stop_diagram':
             pass
         elif type == 'start_recording':
-            self.recording_interval = float(params['rate'])
+            self.recording_interval = int(params['rate'])
             self.run_name = params.get('run_name')
             if not self.run_name:
                 self.run_name = "Noname"
@@ -325,7 +325,10 @@ class Flow(object):
             logging.info('stop recording data')
             if self.store:
                 # save stop for current run
-                self.store.save('run', self.run_name, self.recording_interval, {'action': 'stop'})
+                if self.recording_interval:
+                    self.store.save('run', self.run_name, self.recording_interval, {'action': 'stop'})
+                else:
+                    logging.info('stop recording data not saved (recording_interval none)')
             self.recording_interval = None
         elif type == 'rename_block':
             old_name = params['old_name']
