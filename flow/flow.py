@@ -2,6 +2,7 @@
 import time
 import json
 import logging
+import datetime
 from dateutil.parser import parse
 import numbers
 
@@ -32,7 +33,7 @@ class Flow(object):
         self.store = None
         self.last_user_message_time = None  # the last user message time (if any)
         self.last_camera_store_time = None  # the last camera sequence update time (if any)
-        self.last_record_time = None  # timestamp of last values recorded to long-term storage
+        self.last_record_timestamp = None  # datetime object of last values recorded to long-term storage
         self.recording_interval = None  # number of seconds between storing values in long-term storage
         self.run_name = "Noname"  # name of run for which recording is being saved
 
@@ -128,56 +129,63 @@ class Flow(object):
         gevent.spawn(self.check_devices)
 
         # loop forever
+        timestamp = datetime.datetime.utcnow().replace(microsecond=0)
         while True:
-            if self.diagram:
-
-                # update diagram values
-                self.update_camera_blocks()
-                self.diagram.update()
-
-                # send values to server and actuators
-                values = {}
-                for block in self.diagram.blocks:
-                    value = None
-                    #logging.debug('flow.start loop: block=%s' % block)
-                    if block.output_type == 'i':  # only send camera/image updates if recent message from user
-                        if self.last_user_message_time and time.time() < self.last_user_message_time + 300:
-                            value = block.value
-                    else:
-                        if block.value is not None:
-                            format = '%' + '.%df' % block.decimal_places
-                            value = format % block.value
-                    values[block.id] = value
-
-                    # send values to actuators
-                    if not block.output_type:
-                        device = c.auto_devices.find_device(block.name)  # fix(later): does this still work if we rename a block?
-                        if device and device.dir == 'out':
-                            try:
-                                value = int(block.value)
-                            except:
-                                value = None
-                            if value is not None:
-                                device.send_command('set %d' % value)
-
-                #logging.debug('flow.start loop: values=%s' % values)
-                if self.last_user_message_time and (time.time() - self.last_user_message_time < IDLE_STOP_UPDATE_THRESHOLD):
-                    #logging.debug("IDLE_STOP_UPDATE_THRESHOLD passed")
-                    self.send_message('update_diagram', {'values': values})
-                else:
-                    pass
-                    #logging.debug("IDLE_STOP_UPDATE_THRESHOLD failed")
-
-                # send sequence values
-                current_time = time.time()
-                if self.recording_interval and ((self.last_record_time is None) or current_time > self.last_record_time + self.recording_interval):
-                    for block in self.diagram.blocks:
-                        if not block.input_type:
-                            self.record_data(block.name, block.value)
-                    self.last_record_time = current_time
+            if datetime.datetime.utcnow() > timestamp:
+                if self.diagram:
+                    self.update_diagram_and_send_values(timestamp)
+                timestamp += datetime.timedelta(seconds=1)
 
             # sleep until it is time to do another update
-            c.sleep(1)
+            c.sleep(0.1)
+
+    # updates the current diagram and sends values to server and external hardware;
+    # this function should be called once a second;
+    # timestamp should always be 1 second after the last timestamp (and should be an even number of seconds)
+    def update_diagram_and_send_values(self, timestamp):
+
+        # update diagram values
+        self.update_camera_blocks()
+        self.diagram.update()
+
+        # send values to server and actuators
+        values = {}
+        for block in self.diagram.blocks:
+            value = None
+            #logging.debug('flow.start loop: block=%s' % block)
+            if block.output_type == 'i':  # only send camera/image updates if recent message from user
+                if self.last_user_message_time and time.time() < self.last_user_message_time + 300:
+                    value = block.value
+            else:
+                if block.value is not None:
+                    format = '%' + '.%df' % block.decimal_places
+                    value = format % block.value
+            values[block.id] = value
+
+            # send values to actuators
+            if not block.output_type:
+                device = c.auto_devices.find_device(block.name)  # fix(later): does this still work if we rename a block?
+                if device and device.dir == 'out':
+                    try:
+                        value = int(block.value)
+                    except:
+                        value = None
+                    if value is not None:
+                        device.send_command('set %d' % value)
+
+        #logging.debug('flow.start loop: values=%s' % values)
+        if self.last_user_message_time and (time.time() - self.last_user_message_time < IDLE_STOP_UPDATE_THRESHOLD):
+            #logging.debug("IDLE_STOP_UPDATE_THRESHOLD passed")
+            self.send_message('update_diagram', {'values': values})
+        else:
+            pass
+            #logging.debug("IDLE_STOP_UPDATE_THRESHOLD failed")
+
+        # send sequence values
+        if self.recording_interval and ((self.last_record_timestamp is None) or timestamp >= self.last_record_timestamp + datetime.timedelta(seconds = self.recording_interval)):
+            record_blocks = [b for b in self.diagram.blocks if not b.input_type]
+            self.record_data(record_blocks, timestamp)
+            self.last_record_timestamp = timestamp
 
     # handle messages from server (sent via websocket)
     def _calcAutoInterval(self, start, end):
@@ -218,7 +226,6 @@ class Flow(object):
             # Can't parse: return default (None)
             ret = None
         return ret
-        
 
     # handle messages from server (sent via websocket)
     def handle_message(self, type, params):
@@ -406,19 +413,25 @@ class Flow(object):
                 block.decimal_places = block.compute_decimal_places(values[0])
                 block.value = float(values[0])
 
-    # record data by sending it to the server and/or storing it localling
-    def record_data(self, block_name, value):
+    # record data by sending it to the server and/or storing it locally
+    def record_data(self, blocks, timestamp):
+
         # publish to recording queue to be saved by storage service or save directly
         # store block_name and value into 'sensor' measurement
         # perform store only if store has been initialized properly
         if not self.integ_test:
             if self.store:
-                try:
-                    logging.debug("record_data: %s=%s" % (block_name, value))
-                    self.store.save('sensor', block_name, value)
-                except Exception as err:
-                    logging.error("store.save error: %s" % err)
-        self.send_message('update_sequence', {'sequence': block_name, 'value': value})
+                for block in blocks:
+                    try:
+                        logging.debug("record_data: %s=%s" % (block.name, block.value))
+                        self.store.save('sensor', block.name, block.value)
+                    except Exception as err:
+                        logging.error("store.save error: %s" % err)
+
+        # store blocks on server
+        sequence_prefix = c.path_on_server() + '/'
+        values = {sequence_prefix + b.name: b.value for b in blocks}
+        c.update_sequences(values, timestamp)
 
     # send client info to server/browser
     def send_status(self):
