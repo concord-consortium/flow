@@ -131,10 +131,16 @@ class Flow(object):
         # loop forever
         timestamp = datetime.datetime.utcnow().replace(microsecond=0)
         while True:
+
+            # if the current time is greater than our target timestamp, run our processing
             if datetime.datetime.utcnow() > timestamp:
                 if self.diagram:
                     self.update_diagram_and_send_values(timestamp)
-                timestamp += datetime.timedelta(seconds=1)
+
+                # the processing could have taken more than a second, so update the target timestamp as many times as needed (by an integer amount) to be in the future
+                # alternative: could compute timedelta and do some math to do this in a single step
+                while timestamp < datetime.datetime.utcnow():
+                    timestamp += datetime.timedelta(seconds=1)
 
             # sleep until it is time to do another update
             c.sleep(0.1)
