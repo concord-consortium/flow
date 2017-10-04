@@ -1,10 +1,21 @@
 import abc
+import logging
+
 from decimal import Decimal, ROUND_HALF_UP
 
 
 # represents a block (an input, filter, or output) in a data flow diagram
 class Block(object):
     __metaclass__ = abc.ABCMeta
+
+    #
+    # Block device types that map to physical sensors.
+    #
+    SENSOR_DEVICE_TYPES = [ "temperature", 
+                            "humidity", 
+                            "light",
+                            "soilmoisture",
+                            "CO2" ]
 
     # create a block using a block spec dictionary
     def __init__(self, block_spec=None):
@@ -14,7 +25,21 @@ class Block(object):
             self.type = block_spec['type']
             self.source_ids = block_spec['sources']
             self.required_source_count = block_spec['input_count']
-            self.value = block_spec.get('value', None)
+
+            #
+            # Do not set value from the spec for actual sensors which
+            # might not be connected and therefore should not return 
+            # a value.
+            #
+            if self.type not in self.SENSOR_DEVICE_TYPES:
+                #
+                # For non device types (like numeric blocks) set the
+                # value from the spec.
+                #
+                self.value = block_spec.get('value', None)
+            else:
+                self.value = None
+
             self.params = block_spec.get('params', {})
             self.input_type = block_spec['input_type']
             self.output_type = block_spec['output_type']
@@ -33,9 +58,14 @@ class Block(object):
         source_values = []
         self.decimal_places = 0
         for source in self.sources:
+
+            # logging.debug("%s Checking source %s" % (self.name, source))
+
             if source.stale:
+                # logging.debug("%s Source is stale. Updating..." % (self.name))
                 source.update()
             if source.value is not None:
+                # logging.debug("%s Appending %s..." % (self.name, source.value))
                 if source.decimal_places > self.decimal_places:
                     self.decimal_places = source.decimal_places
                 source_values.append(source.value)
@@ -60,13 +90,22 @@ class Block(object):
     # compute a new value for this block (assuming it has inputs/sources)
     def update(self):
         # we can only internally update blocks that have sources; others must be updated from the outside
+
+        # logging.debug("Block update() %s %s" % 
+        #                (self.name, self.get_source_values()))
+
         if self.required_source_count:
+
+            # logging.debug("Block update() checking sources")
 
             # get all defined source values
             source_values = self.get_source_values()
 
             # compute new value for this block
             self.compute_value(source_values)
+
+        # logging.debug("Block update() %s value %s" % 
+        #                (self.name, self.value))
 
         # mark the block as non-stale, since we've updated the value or determined that no update is needed
         self.stale = False
