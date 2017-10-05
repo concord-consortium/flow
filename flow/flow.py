@@ -18,11 +18,44 @@ from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_d
 from diagram_storage import list_diagrams, load_diagram, save_diagram, rename_diagram, delete_diagram
 from diagram import Diagram
 
+#
+# Check if we can include IP addresses in our status
+#
+include_network_status = True
+try:
+    from netifaces import interfaces, ifaddresses, AF_INET
+except ImportError:
+    include_network_status = False
+
+include_version_info = True
+try:
+    import subprocess
+except ImportError:
+    include_version_info = False
+
 # threshold for idle use messages indicating to stop sending update messages
 IDLE_STOP_UPDATE_THRESHOLD = 5 * 60.0
 
 # The Flow class holds the state and control code for the data flow client program (running on a RasPi or similar).
 class Flow(object):
+
+    #
+    # Get version info
+    #
+    FLOW_VERSION = None
+
+    if include_version_info:
+
+        #
+        # Track version with git tags.
+        # If this head is tagged, then this returns the tag name.
+        # Otherwise this returns a short hash of the head.
+        #
+        FLOW_VERSION = subprocess.check_output([    'git',
+                                                    'describe',
+                                                    '--always'  ])
+
+
 
     def __init__(self):
         self.diagram = None  # the currently running diagram (if any)
@@ -235,7 +268,9 @@ class Flow(object):
 
     # handle messages from server (sent via websocket)
     def handle_message(self, type, params):
-        #logging.debug('handle_message: %s %s' % (type, params))
+
+        logging.debug('handle_message: %s %s' % (type, params))
+
         used = True
         if type == 'list_devices':
             print 'list_devices'
@@ -439,14 +474,32 @@ class Flow(object):
         values = {sequence_prefix + b.name: b.value for b in blocks}
         c.update_sequences(values, timestamp)
 
+    #
     # send client info to server/browser
+    #
     def send_status(self):
+
+        #
+        # Get IP info
+        #
+        ip_map = None
+
+        if include_network_status:
+            ip_map = {}
+            for interface in interfaces():
+                if interface == 'lo':
+                    continue
+                for link in ifaddresses(interface)[AF_INET]:
+                    ip_map[interface] = link['addr']
+
         status = {
-            'flow_version': '0.0.1',
-            'lib_version': c.VERSION + ' ' + c.BUILD,
-            'device_count': len(c.auto_devices._auto_devices),
-            'recording_interval': self.recording_interval,
+            'flow_version':         Flow.FLOW_VERSION,
+            'lib_version':          c.VERSION + ' ' + c.BUILD,
+            'device_count':         len(c.auto_devices._auto_devices),
+            'recording_interval':   self.recording_interval,
+            'ip_addresses':         ip_map,
         }
+
         if self.diagram:
             status['current_diagram'] = self.diagram.name
         self.send_message('status', status)
