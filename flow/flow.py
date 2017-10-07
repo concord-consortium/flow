@@ -489,8 +489,11 @@ class Flow(object):
             for interface in interfaces():
                 if interface == 'lo':
                     continue
-                for link in ifaddresses(interface)[AF_INET]:
-                    ip_map[interface] = link['addr']
+                addresses = ifaddresses(interface)
+                if AF_INET in addresses:
+                    links = addresses[AF_INET]
+                    for link in links:
+                        ip_map[interface] = link['addr']
 
         status = {
             'flow_version':         Flow.FLOW_VERSION,
