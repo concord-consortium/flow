@@ -161,6 +161,9 @@ class Flow(object):
         # launch a greenlet to check for devices being plugged in
         gevent.spawn(self.check_devices)
 
+        # launch a greenlet to send watchdog messages to server
+        gevent.spawn(self.send_watchdog)
+
         # loop forever
         timestamp = datetime.datetime.utcnow().replace(microsecond=0)
         while True:
@@ -507,6 +510,10 @@ class Flow(object):
             status['current_diagram'] = self.diagram.name
         self.send_message('status', status)
 
+        # update controller status table on server
+        own_path = c.path_on_server()
+        c.resources.send_request_to_server('PUT', '/api/v1/resources' + own_path, {'status': json.dumps(status)})
+
     # check for new devices and create sequences for them (run this as a greenlet
     def check_devices(self):
 
@@ -532,6 +539,12 @@ class Flow(object):
 
             # sleep for a bit
             c.sleep(5)
+
+    # send watchdog message to server so that it knows which controllers are online
+    def send_watchdog(self):
+        while True:
+            c.send_message('watchdog', {})
+            c.sleep(60)
 
     # start capturing from a camera
     def add_camera(self):
