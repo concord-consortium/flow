@@ -1,5 +1,6 @@
 logs
 diagrams
+config.hjson
 local.hjson
 *~
 *.pyc
