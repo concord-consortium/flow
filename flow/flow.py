@@ -53,8 +53,9 @@ class Flow(object):
         #
         FLOW_VERSION = subprocess.check_output([    'git',
                                                     'describe',
-                                                    '--always'  ])
+                                                    '--always'  ]).rstrip()
 
+        logging.debug("Found flow version '%s'" % (FLOW_VERSION))
 
 
     def __init__(self):
@@ -344,15 +345,33 @@ class Flow(object):
             self.send_message('diagram_list', {'diagrams': list_diagrams()})
         elif type == 'save_diagram':
             save_diagram(params['name'], params['diagram'])
+
+            logging.debug("Sending save_diagram_result")
+            self.send_message(  'save_diagram_result',
+                                {   'success': True,
+                                    'message': "Saved diagram: %s" % (params['name'])
+                                })
+
         elif type == 'rename_diagram':
             rename_diagram(params['old_name'], params['new_name'])
         elif type == 'delete_diagram':
             delete_diagram(params['name'])
+
         elif type == 'set_diagram':
+
             diagram_spec = params['diagram']
+
+            #name = None
+            #if 'name' in diagram_spec:
+            #    name = diagram_spec['name']
+            #logging.debug(
+            #    "handle_message: set_diagram name %s" % (name))
+
             self.diagram = Diagram('_temp_', diagram_spec)
+
         elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
-            logging.debug("handle_meaage: start_diagram - loading diagram: %s" % params['name'])
+
+            logging.debug("handle_message: start_diagram - loading diagram: %s" % params['name'])
             diagram_spec = load_diagram(params['name'])
             self.diagram = Diagram(params['name'], diagram_spec)
             #local_config = hjson.loads(open('local.hjson').read())  # save name of diagram to load when start script next time
@@ -360,6 +379,12 @@ class Flow(object):
             #open('local.hjson', 'w').write(hjson.dumps(local_config))
             if self.store:
                 self.store.save('diagram', params['name'], 0, {'action': 'start'})
+ 
+            self.send_message(  'start_diagram_result',
+                                {   'success': True,
+                                    'message': "Started diagram: %s" % (params['name'])
+                                })
+
 
         elif type == 'stop_diagram':
             pass
@@ -381,12 +406,14 @@ class Flow(object):
                 else:
                     logging.info('stop recording data not saved (recording_interval none)')
             self.recording_interval = None
+
         elif type == 'rename_block':
             old_name = params['old_name']
             new_name = params['new_name']
             device = c.auto_devices.find_device(old_name)
             device.name = new_name
             rename_sequence(c.path_on_server(), old_name, new_name)  # change sequence name on server
+
         elif type == 'add_camera':
             self.add_camera()
         elif type == 'add_sim_sensor':
@@ -507,7 +534,11 @@ class Flow(object):
         }
 
         if self.diagram:
+            logging.debug("Setting name %s" % (self.diagram.name))
             status['current_diagram'] = self.diagram.name
+        else:
+            logging.debug("No diagram name to set.")
+
         self.send_message('status', status)
 
         # update controller status table on server
