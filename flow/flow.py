@@ -53,6 +53,7 @@ class Flow(object):
         #
         FLOW_VERSION = subprocess.check_output([    'git',
                                                     'describe',
+                                                    '--tags',
                                                     '--always'  ]).rstrip()
 
         logging.debug("Found flow version '%s'" % (FLOW_VERSION))
