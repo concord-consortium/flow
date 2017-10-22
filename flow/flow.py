@@ -575,6 +575,7 @@ class Flow(object):
     # send watchdog message to server so that it knows which controllers are online
     def send_watchdog(self):
         while True:
+            self.send_status()
             c.send_message('watchdog', {})
             c.sleep(60)
 
