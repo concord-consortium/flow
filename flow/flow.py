@@ -48,8 +48,8 @@ class Flow(object):
     #
     # Values for set_operational_status
     #
-    OP_STATUS_READY     = "Ready"
-    OP_STATUS_UPDATING  = "Updating"
+    OP_STATUS_READY     = "READY"
+    OP_STATUS_UPDATING  = "UPDATING"
 
 
     #
