@@ -50,11 +50,17 @@ class Command(object):
         return output
 
     #
+    # Get the response object
+    #
+    def get_response():
+        return self.response
+
+    #
     # Override this to perform some subclass specific operation
     #
     @abc.abstractmethod
     def exec_impl(self):
         """ Subclasses implement this method to perform specific operations """
         return
-    
+
 

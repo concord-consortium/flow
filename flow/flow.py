@@ -21,6 +21,7 @@ from diagram import Diagram
 from commands.command                   import Command
 from commands.list_versions_command     import ListVersionsCommand
 from commands.download_software_command import DownloadSoftwareCommand
+from commands.update_software_command   import UpdateSoftwareCommand
 
 
 #
@@ -287,8 +288,8 @@ class Flow(object):
         #
         command_class_dict = { 
             'download_software_updates':    DownloadSoftwareCommand,
-            'list_software_versions':       ListVersionsCommand }
-            # 'update_software_version':      UpdateSoftwareCommand }
+            'list_software_versions':       ListVersionsCommand,
+            'update_software_version':      UpdateSoftwareCommand }
  
         #
         # Do not allow modification of the running diagram while
