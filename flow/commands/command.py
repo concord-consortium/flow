@@ -41,6 +41,7 @@ class Command(object):
         if self.flow is not None:
             self.flow.send_message(self.cmd_name + "_response", self.response)
 
+        self.post_exec()
 
     #
     # Helper to execute subprocess commands
@@ -62,5 +63,13 @@ class Command(object):
     def exec_impl(self):
         """ Subclasses implement this method to perform specific operations """
         return
+
+    #
+    # Override this to perform some subclass specific operation after 
+    # exec_impl is called and response is sent.
+    #
+    def post_exec(self):
+        return
+
 
 

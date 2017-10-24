@@ -46,6 +46,13 @@ IDLE_STOP_UPDATE_THRESHOLD = 5 * 60.0
 class Flow(object):
 
     #
+    # Values for set_operational_status
+    #
+    OP_STATUS_READY     = "Ready"
+    OP_STATUS_UPDATING  = "Updating"
+
+
+    #
     # Get version info
     #
     FLOW_VERSION = None
@@ -133,6 +140,9 @@ class Flow(object):
         else:
             logging.warning("Store disabled.")
 
+        self.operational_status = self.OP_STATUS_READY
+
+
     # MQTT integration
     def init_mqtt(self):
         """Initialize mqtt."""
@@ -162,6 +172,18 @@ class Flow(object):
         except Exception as err:
             logging.error("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled: %s" % \
               err)
+
+    #
+    # Set operational status
+    #
+    def set_operational_status(self, status):
+        self.operational_status = status
+
+    #
+    # Get operational status
+    #
+    def get_operational_status(self):
+        return self.operational_status
 
     # run the current diagram (if any); this is the main loop of the flow program
     def start(self):
@@ -573,6 +595,7 @@ class Flow(object):
                         ip_map[interface] = link['addr']
 
         status = {
+            'operational_status':   self.operational_status,
             'flow_version':         Flow.FLOW_VERSION,
             'lib_version':          c.VERSION + ' ' + c.BUILD,
             'device_count':         len(c.auto_devices._auto_devices),

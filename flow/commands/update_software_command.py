@@ -27,8 +27,16 @@ class UpdateSoftwareCommand(Command):
 
         self.shell_helper(['git', 'checkout', 'tags/'+release])
 
+        if self.flow is not None:
+            self.flow.set_operational_status(self.flow.OP_STATUS_UPDATING)
+
         self.response = {   
                 'success': True,
-                'message': 'Software version updated to %s' % (tag) }
+                'message': 'Software version updating to %s' % (tag) }
+
+    def post_exec(self):
+        if self.flow is not None:
+            self.flow.send_status()
+        self.shell_helper(['sudo', 'reboot'])
 
 
