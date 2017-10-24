@@ -25,7 +25,7 @@ class UpdateSoftwareCommand(Command):
                     'message': 'Version %s is not available' % (release) }
             return
 
-        self.shell_helper(['git', 'checkout'. 'tags/'+release])
+        self.shell_helper(['git', 'checkout', 'tags/'+release])
 
         self.response = {   
                 'success': True,
