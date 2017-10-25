@@ -18,6 +18,14 @@ from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_d
 from diagram_storage import list_diagrams, load_diagram, save_diagram, rename_diagram, delete_diagram
 from diagram import Diagram
 
+from git_tools                          import git_base_command
+
+from commands.command                   import Command
+from commands.list_versions_command     import ListVersionsCommand
+from commands.download_software_command import DownloadSoftwareCommand
+from commands.update_software_command   import UpdateSoftwareCommand
+
+
 #
 # Check if we can include IP addresses in our status
 #
@@ -40,21 +48,32 @@ IDLE_STOP_UPDATE_THRESHOLD = 5 * 60.0
 class Flow(object):
 
     #
+    # Values for set_operational_status
+    #
+    OP_STATUS_READY     = "READY"
+    OP_STATUS_UPDATING  = "UPDATING"
+
+
+    #
     # Get version info
     #
     FLOW_VERSION = None
 
     if include_version_info:
 
-        #
-        # Track version with git tags.
-        # If this head is tagged, then this returns the tag name.
-        # Otherwise this returns a short hash of the head.
-        #
-        FLOW_VERSION = subprocess.check_output([    'git',
-                                                    'describe',
-                                                    '--tags',
-                                                    '--always'  ]).rstrip()
+        try:
+            #
+            # Track version with git tags.
+            # If this head is tagged, then this returns the tag name.
+            # Otherwise this returns a short hash of the head.
+            #
+            FLOW_VERSION = subprocess.check_output( git_base_command() +
+                                                    [   'describe',
+                                                        '--tags',
+                                                        '--always'  ]).rstrip()
+
+        except Exception as err:
+            FLOW_VERSION = "unknown"
 
         logging.debug("Found flow version '%s'" % (FLOW_VERSION))
 
@@ -127,6 +146,10 @@ class Flow(object):
         else:
             logging.warning("Store disabled.")
 
+        self.operational_status = self.OP_STATUS_READY
+        self.available_versions = []
+
+
     # MQTT integration
     def init_mqtt(self):
         """Initialize mqtt."""
@@ -156,6 +179,18 @@ class Flow(object):
         except Exception as err:
             logging.error("Can't initialize store. Probably influxdb library not installed or influxdb not running. Store will be disabled: %s" % \
               err)
+
+    #
+    # Set operational status
+    #
+    def set_operational_status(self, status):
+        self.operational_status = status
+
+    #
+    # Get operational status
+    #
+    def get_operational_status(self):
+        return self.operational_status
 
     # run the current diagram (if any); this is the main loop of the flow program
     def start(self):
@@ -276,6 +311,16 @@ class Flow(object):
 
         logging.debug('handle_message: %s %s' % (type, params))
 
+        #
+        # For any messages that choose to implement the command interface,
+        # they can be instantiated using their message type as key.
+        #
+        command_class_dict = { 
+            'download_software_updates':    DownloadSoftwareCommand,
+            'list_software_versions':       ListVersionsCommand,
+            'update_software_version':      UpdateSoftwareCommand }
+ 
+
         used = True
         if type == 'list_devices':
             print 'list_devices'
@@ -347,8 +392,8 @@ class Flow(object):
         elif type == 'save_diagram':
             save_diagram(params['name'], params['diagram'])
 
-            logging.debug("Sending save_diagram_result")
-            self.send_message(  'save_diagram_result',
+            logging.debug("Sending save_diagram_response")
+            self.send_message(  'save_diagram_response',
                                 {   'success': True,
                                     'message': "Saved diagram: %s" % (params['name'])
                                 })
@@ -381,7 +426,7 @@ class Flow(object):
             if self.store:
                 self.store.save('diagram', params['name'], 0, {'action': 'start'})
  
-            self.send_message(  'start_diagram_result',
+            self.send_message(  'start_diagram_response',
                                 {   'success': True,
                                     'message': "Started diagram: %s" % (params['name'])
                                 })
@@ -425,6 +470,15 @@ class Flow(object):
             remove_sim_device()
         elif type == 'request_status':
             self.send_status()
+
+        elif type in [  'download_software_updates',
+                        'list_software_versions',
+                        'update_software_version' ]:
+
+            class_  = command_class_dict[type]
+            cmd     = class_(self, type, params)
+            cmd.exec_cmd()
+
         else:
             used = False
 
@@ -444,6 +498,15 @@ class Flow(object):
         Otherwise, we send to websocket only via c.send_message
         """
         #logging.debug('send_message type=%s' % type)
+
+        #
+        # Add our folder name to the params so that the client knows
+        # which controller is responding in case they have
+        # sent messages to multiple controllers.
+        #
+        own_path = c.path_on_server()
+        parameters['src_folder'] = own_path
+
         if c.config.get('enable_ble', False) and self.publisher:
             # update_sequence not needed by ble, only by store
             if type != "update_sequence":
@@ -527,6 +590,8 @@ class Flow(object):
                         ip_map[interface] = link['addr']
 
         status = {
+            'operational_status':   self.operational_status,
+            'available_versions':   self.available_versions,
             'flow_version':         Flow.FLOW_VERSION,
             'lib_version':          c.VERSION + ' ' + c.BUILD,
             'device_count':         len(c.auto_devices._auto_devices),
@@ -572,9 +637,23 @@ class Flow(object):
             # sleep for a bit
             c.sleep(5)
 
-    # send watchdog message to server so that it knows which controllers are online
+    #
+    # Send watchdog message to server so that it knows which 
+    # controllers are online
+    #
     def send_watchdog(self):
+        minutes = 0
         while True:
+            if minutes == 0:
+                self.available_versions = []
+                list_cmd = ListVersionsCommand(None, None, {})
+                list_cmd.exec_cmd()
+                if list_cmd.get_response() and list_cmd.get_response()['version_list']:
+                    self.available_versions = list_cmd.get_response()['version_list']
+            if minutes == 10:
+                minutes = 0
+            minutes += 1
+
             self.send_status()
             c.send_message('watchdog', {})
             c.sleep(60)
