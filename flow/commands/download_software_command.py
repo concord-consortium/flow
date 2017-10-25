@@ -1,7 +1,7 @@
 import subprocess
 
-from command    import Command
-from git_tools  import git_base_command
+from command        import Command
+from ..git_tools    import git_base_command
 
 class DownloadSoftwareCommand(Command):
 
