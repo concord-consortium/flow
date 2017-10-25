@@ -1,9 +1,9 @@
 import subprocess
 
-from command                        import Command
-from list_versions_command          import ListVersionsCommand
+from command        import Command
+from .              import ListVersionsCommand
 
-from ..git_tools                    import git_base_command
+from ..git_tools    import git_base_command
 
 class UpdateSoftwareCommand(Command):
 
