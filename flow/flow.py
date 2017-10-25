@@ -324,14 +324,14 @@ class Flow(object):
         # Do not allow modification of the running diagram while
         # recording.
         #
-        if self.recording_interval is not None:
-            if type != 'stop_recording':
-                self.send_message(type + '_response', 
-                        {   'success': False,
-                            'message': 'Cannot perform operation %s while controller is recording.' % (type) 
-                        })
-                self.last_user_message_time = time.time()
-                return True
+        #if self.recording_interval is not None:
+        #    if type != 'stop_recording':
+        #        self.send_message(type + '_response', 
+        #                {   'success': False,
+        #                    'message': 'Cannot perform operation %s while controller is recording.' % (type) 
+        #                })
+        #        self.last_user_message_time = time.time()
+        #        return True
 
         used = True
         if type == 'list_devices':
