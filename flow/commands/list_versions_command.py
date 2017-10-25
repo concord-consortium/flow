@@ -8,7 +8,7 @@ class ListVersionsCommand(Command):
         Command.__init__(self, flow, cmd_name, params)
 
     def exec_impl(self):
-        output      = self.shell_helper(['git', '--git-dir=/home/pi/flow/.git', 'tag'])
+        output      = self.shell_helper(['git', '-C', '/home/pi/flow', 'tag'])
         versions    = output.split()
         self.response = {   'success': True,
                             'message': 'Found version list',

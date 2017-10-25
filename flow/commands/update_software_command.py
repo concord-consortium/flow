@@ -25,7 +25,7 @@ class UpdateSoftwareCommand(Command):
                     'message': 'Version %s is not available' % (release) }
             return
 
-        self.shell_helper(['git', '--git-dir=/home/pi/flow/.git', 'checkout', 'tags/'+release])
+        self.shell_helper(['git', '-C', '/home/pi/flow', 'checkout', 'tags/'+release])
 
         if self.flow is not None:
             self.flow.set_operational_status(self.flow.OP_STATUS_UPDATING)
