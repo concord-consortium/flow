@@ -141,6 +141,7 @@ class Flow(object):
             logging.warning("Store disabled.")
 
         self.operational_status = self.OP_STATUS_READY
+        self.available_versions = []
 
 
     # MQTT integration
@@ -596,6 +597,7 @@ class Flow(object):
 
         status = {
             'operational_status':   self.operational_status,
+            'available_versions':   self.available_versions,
             'flow_version':         Flow.FLOW_VERSION,
             'lib_version':          c.VERSION + ' ' + c.BUILD,
             'device_count':         len(c.auto_devices._auto_devices),
@@ -641,9 +643,21 @@ class Flow(object):
             # sleep for a bit
             c.sleep(5)
 
-    # send watchdog message to server so that it knows which controllers are online
+    #
+    # Send watchdog message to server so that it knows which 
+    # controllers are online
+    #
     def send_watchdog(self):
+        minutes = 0
         while True:
+            if minutes == 0:
+                list_cmd = ListVersionsCommand(None, None, {}).
+                list_cmd.exec_cmd()
+                self.available_versions = list_cmd.get_response()['version_list']
+            if minutes == 10:
+                minutes = 0
+            minutes += 1
+
             self.send_status()
             c.send_message('watchdog', {})
             c.sleep(60)
