@@ -1,7 +1,7 @@
 import subprocess
 
 from command                        import Command
-from commands.list_versions_command import ListVersionsCommand
+from list_versions_command          import ListVersionsCommand
 
 from ..git_tools                    import git_base_command
 
