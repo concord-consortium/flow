@@ -53,7 +53,7 @@ class Command(object):
     #
     # Get the response object
     #
-    def get_response():
+    def get_response(self):
         return self.response
 
     #

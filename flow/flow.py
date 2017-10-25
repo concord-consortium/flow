@@ -651,7 +651,7 @@ class Flow(object):
         minutes = 0
         while True:
             if minutes == 0:
-                list_cmd = ListVersionsCommand(None, None, {}).
+                list_cmd = ListVersionsCommand(None, None, {})
                 list_cmd.exec_cmd()
                 self.available_versions = list_cmd.get_response()['version_list']
             if minutes == 10:
