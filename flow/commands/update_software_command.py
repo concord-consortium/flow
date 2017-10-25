@@ -1,6 +1,7 @@
 import subprocess
 
-from command import Command
+from command    import Command
+from git_tools  import git_base_command
 
 class UpdateSoftwareCommand(Command):
 
@@ -25,7 +26,7 @@ class UpdateSoftwareCommand(Command):
                     'message': 'Version %s is not available' % (release) }
             return
 
-        self.shell_helper(['git', '-C', '/home/pi/flow', 'checkout', 'tags/'+release])
+        self.shell_helper(git_base_command() + ['checkout', 'tags/'+release])
 
         if self.flow is not None:
             self.flow.set_operational_status(self.flow.OP_STATUS_UPDATING)

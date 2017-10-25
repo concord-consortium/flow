@@ -18,6 +18,8 @@ from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_d
 from diagram_storage import list_diagrams, load_diagram, save_diagram, rename_diagram, delete_diagram
 from diagram import Diagram
 
+from git_tools                          import git_base_command
+
 from commands.command                   import Command
 from commands.list_versions_command     import ListVersionsCommand
 from commands.download_software_command import DownloadSoftwareCommand
@@ -65,10 +67,8 @@ class Flow(object):
             # If this head is tagged, then this returns the tag name.
             # Otherwise this returns a short hash of the head.
             #
-            FLOW_VERSION = subprocess.check_output([    'git',
-                                                        '-C',
-                                                        '/home/pi/flow',
-                                                        'describe',
+            FLOW_VERSION = subprocess.check_output( git_base_command() +
+                                                    [   'describe',
                                                         '--tags',
                                                         '--always'  ]).rstrip()
 

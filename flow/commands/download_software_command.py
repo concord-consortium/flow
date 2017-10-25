@@ -1,6 +1,7 @@
 import subprocess
 
-from command import Command
+from command    import Command
+from git_tools  import git_base_command
 
 class DownloadSoftwareCommand(Command):
 
@@ -8,7 +9,7 @@ class DownloadSoftwareCommand(Command):
         Command.__init__(self, flow, cmd_name, params)
 
     def exec_impl(self):
-        output = self.shell_helper(['git', '-C', '/home/pi/flow', 'fetch'])
+        output = self.shell_helper(git_base_command() + ['fetch'])
         self.response   = { 'success':  True,
                             'message':  'Downloaded latest software.',
                             'output':   output }
