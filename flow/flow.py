@@ -59,17 +59,21 @@ class Flow(object):
 
     if include_version_info:
 
-        #
-        # Track version with git tags.
-        # If this head is tagged, then this returns the tag name.
-        # Otherwise this returns a short hash of the head.
-        #
-        FLOW_VERSION = subprocess.check_output([    'git',
-                                                    '-C',
-                                                    '/home/pi/flow'
-                                                    'describe',
-                                                    '--tags',
-                                                    '--always'  ]).rstrip()
+        try:
+            #
+            # Track version with git tags.
+            # If this head is tagged, then this returns the tag name.
+            # Otherwise this returns a short hash of the head.
+            #
+            FLOW_VERSION = subprocess.check_output([    'git',
+                                                        '-C',
+                                                        '/home/pi/flow',
+                                                        'describe',
+                                                        '--tags',
+                                                        '--always'  ]).rstrip()
+
+        except Exception as err:
+            FLOW_VERSION = "unknown"
 
         logging.debug("Found flow version '%s'" % (FLOW_VERSION))
 
@@ -653,9 +657,11 @@ class Flow(object):
         minutes = 0
         while True:
             if minutes == 0:
+                self.available_versions = []
                 list_cmd = ListVersionsCommand(None, None, {})
                 list_cmd.exec_cmd()
-                self.available_versions = list_cmd.get_response()['version_list']
+                if list_cmd.get_response() and list_cmd.get_response()['version_list']:
+                    self.available_versions = list_cmd.get_response()['version_list']
             if minutes == 10:
                 minutes = 0
             minutes += 1
