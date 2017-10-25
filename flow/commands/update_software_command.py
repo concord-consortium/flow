@@ -35,8 +35,11 @@ class UpdateSoftwareCommand(Command):
 
         self.response = {   
                 'success': True,
-                'message': 'Software version updating to %s' % (tag) }
+                'message': 'Software version updating to %s' % (release) }
 
+    #
+    # Reboot after update
+    #
     def post_exec(self):
         if self.flow is not None:
             self.flow.send_status()
