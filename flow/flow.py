@@ -65,6 +65,7 @@ class Flow(object):
         # Otherwise this returns a short hash of the head.
         #
         FLOW_VERSION = subprocess.check_output([    'git',
+                                                    '--git-dir=/home/pi/flow/.git'
                                                     'describe',
                                                     '--tags',
                                                     '--always'  ]).rstrip()
