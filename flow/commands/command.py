@@ -3,6 +3,12 @@ import subprocess
 import json
 import logging
 
+#
+# This is a base command class.
+# Subclasses can override the exec_impl method for handling messages.
+# Messages responses are automatically sent and the base class can
+# do some error handling.
+#
 class Command(object):
     __metaclass__ = abc.ABCMeta
 
