@@ -1,9 +1,9 @@
 import subprocess
 
-from command        import Command
-from .              import ListVersionsCommand
+from command                import Command
+from list_versions_command  import ListVersionsCommand
 
-from ..git_tools    import git_base_command
+from ..git_tools            import git_base_command
 
 class UpdateSoftwareCommand(Command):
 
@@ -16,7 +16,7 @@ class UpdateSoftwareCommand(Command):
         list_cmd = ListVersionsCommand(None, None, {})
         list_cmd.exec_cmd()
 
-        if list_cmd.get_response().success is False:
+        if list_cmd.get_response()['success'] is False:
             self.response = {   
                     'success': False,
                     'message': 'Unable to list available versions.' }
