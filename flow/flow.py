@@ -66,7 +66,7 @@ class Flow(object):
         #
         FLOW_VERSION = subprocess.check_output([    'git',
                                                     '-C',
-                                                    '/home/pi/flow'
+                                                    '/home/pi/flow',
                                                     'describe',
                                                     '--tags',
                                                     '--always'  ]).rstrip()
