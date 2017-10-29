@@ -306,7 +306,9 @@ class Flow(object):
             ret = None
         return ret
 
+    #
     # handle messages from server (sent via websocket)
+    #
     def handle_message(self, type, params):
 
         logging.debug('handle_message: %s %s' % (type, params))
@@ -319,7 +321,30 @@ class Flow(object):
             'download_software_updates':    DownloadSoftwareCommand,
             'list_software_versions':       ListVersionsCommand,
             'update_software_version':      UpdateSoftwareCommand }
- 
+
+        #
+        # Messages allowed when in recording mode
+        #
+        allowed_when_recording = [  'stop_recording',
+                                    'list_diagrams',
+                                    'request_status',
+                                    'rename_diagram',
+                                    'delete_diagram'    ]
+
+        #
+        # Restrict allowed operations while recording.
+        # Do not allow modification of the running diagram while
+        # recording.
+        #
+        if self.recording_interval is not None:
+            if not type in allowed_when_recording:
+                logging.debug("Message %s not allowed while recording." % (type))
+                self.send_message(type + '_response',
+                        {   'success': False,
+                            'message': 'Cannot perform operation %s while controller is recording.' % (type)
+                        })
+                self.last_user_message_time = time.time()
+                return True
 
         used = True
         if type == 'list_devices':
@@ -399,21 +424,62 @@ class Flow(object):
                                 })
 
         elif type == 'rename_diagram':
+
+            #
+            # Do not allow renaming of recording diagram
+            #
+            if self.recording_interval is not None:
+                if params['old_name'] == self.diagram.name:
+             
+                    self.send_message(  
+                                'rename_diagram_response',
+                                {   'success': False,
+                                    'message': "Cannot rename diagram while recording"
+                                })
+                    return
+                   
             rename_diagram(params['old_name'], params['new_name'])
+            self.send_message(  
+                                'rename_diagram_response',
+                                {   'success': True,
+                                    'message': "Diagram renamed"
+                                })
+
         elif type == 'delete_diagram':
+
+            #
+            # Do not allow deleting of recording diagram
+            #
+            if self.recording_interval is not None:
+                if params['name'] == self.diagram.name:
+             
+                    self.send_message(  
+                                'delete_diagram_response',
+                                {   'success': False,
+                                    'message': "Cannot delete diagram while recording"
+                                })
+                    return
+            
             delete_diagram(params['name'])
+
+            self.send_message(  
+                                'delete_diagram_response',
+                                {   'success': True,
+                                    'message': "Diagram deleted"
+                                })
+
 
         elif type == 'set_diagram':
 
             diagram_spec = params['diagram']
 
-            #name = None
-            #if 'name' in diagram_spec:
-            #    name = diagram_spec['name']
-            #logging.debug(
-            #    "handle_message: set_diagram name %s" % (name))
+            name = '_temp_'
+            if 'name' in diagram_spec:
+                name = diagram_spec['name']
+            logging.debug(
+                "handle_message: set_diagram name %s" % (name))
 
-            self.diagram = Diagram('_temp_', diagram_spec)
+            self.diagram = Diagram(name, diagram_spec)
 
         elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
 
