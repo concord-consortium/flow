@@ -148,6 +148,7 @@ class Flow(object):
 
         self.operational_status = self.OP_STATUS_READY
         self.available_versions = []
+        self.username           = None
 
 
     # MQTT integration
@@ -326,6 +327,7 @@ class Flow(object):
         # Messages allowed when in recording mode
         #
         allowed_when_recording = [  'stop_recording',
+                                    'stop_diagram',
                                     'list_diagrams',
                                     'request_status',
                                     'rename_diagram',
@@ -339,9 +341,17 @@ class Flow(object):
         if self.recording_interval is not None:
             if not type in allowed_when_recording:
                 logging.debug("Message %s not allowed while recording." % (type))
+                username = self.username
+                diagram_name = None
+                if self.diagram:
+                    diagram_name = self.diagram.name
+
                 self.send_message(type + '_response',
-                        {   'success': False,
-                            'message': 'Cannot perform operation %s while controller is recording.' % (type)
+                        {   'success':  False,
+                            'error':    'recording_in_progress',
+                            'data':     {   'username': username,
+                                            'diagram':  diagram_name },
+                            'message':  'Cannot perform operation %s while controller is recording.' % (type)
                         })
                 self.last_user_message_time = time.time()
                 return True
@@ -471,15 +481,47 @@ class Flow(object):
 
         elif type == 'set_diagram':
 
-            diagram_spec = params['diagram']
+            #
+            # v2.0 messages should associate a username with a running
+            # program.
+            #
+            if set(('diagram', 'username')) <= set(params):
+                diagram_spec = params['diagram']
 
-            name = '_temp_'
-            if 'name' in diagram_spec:
-                name = diagram_spec['name']
-            logging.debug(
-                "handle_message: set_diagram name %s" % (name))
+                if 'name' not in diagram_spec:
+                    self.send_message(
+                                type + '_response',
+                                {   'success': False,
+                                    'message': "No program name specified."
+                                })
+                    return
 
-            self.diagram = Diagram(name, diagram_spec)
+                name            = diagram_spec['name']
+                self.diagram    = Diagram(name, diagram_spec)
+                self.username   = params['username']
+
+                self.send_message(
+                                type + '_response',
+                                {   'success': True,
+                                    'message': "Set running program %s for user %s." % (name, self.username)
+                                })
+
+            else:
+
+                #
+                # Support legacy flow for backwards compatibility.
+                # TODO remove this once v1.0 is no longer supported.
+                #
+
+                diagram_spec = params['diagram']
+
+                name = '_temp_'
+                if 'name' in diagram_spec:
+                    name = diagram_spec['name']
+                logging.debug(
+                    "handle_message: set_diagram name %s" % (name))
+
+                self.diagram = Diagram(name, diagram_spec)
 
         elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
 
@@ -499,7 +541,20 @@ class Flow(object):
 
 
         elif type == 'stop_diagram':
-            pass
+
+            #
+            # Stop recording if in progress.
+            # Remove the currently running diagram program.
+            # Remove the currently set user.
+            #
+            self.recording_interval = None
+            self.diagram            = None
+            self.username           = None
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Program stopped"
+                                })
+
         elif type == 'start_recording':
             self.recording_interval = int(params['rate'])
             self.run_name = params.get('run_name')
@@ -509,6 +564,12 @@ class Flow(object):
             if self.store:
                 # save start for named run, (Noname if not given)
                 self.store.save('run', self.run_name, self.recording_interval, {'action': 'start'})
+
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Recording started."
+                                })
+
         elif type == 'stop_recording':
             logging.info('stop recording data')
             if self.store:
@@ -518,6 +579,7 @@ class Flow(object):
                 else:
                     logging.info('stop recording data not saved (recording_interval none)')
             self.recording_interval = None
+
 
         elif type == 'rename_block':
             old_name = params['old_name']
@@ -658,6 +720,7 @@ class Flow(object):
         status = {
             'operational_status':   self.operational_status,
             'available_versions':   self.available_versions,
+            'username':             self.username,
             'flow_version':         Flow.FLOW_VERSION,
             'lib_version':          c.VERSION + ' ' + c.BUILD,
             'device_count':         len(c.auto_devices._auto_devices),
@@ -670,6 +733,7 @@ class Flow(object):
             status['current_diagram'] = self.diagram.name
         else:
             logging.debug("No diagram name to set.")
+            status['current_diagram'] = None
 
         self.send_message('status', status)
 
