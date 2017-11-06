@@ -106,9 +106,8 @@ class Flow(object):
         # call init functions. if they fail, mqtt, store resp. will be noop
         if c.config.get('enable_ble', False):
             self.init_mqtt()
-            #logging.info("MQTT initialized.")
         else:
-            logging.warning("MQTT and BLE disabled.")
+            logging.debug("MQTT and BLE disabled.")
 
         if c.config.get('enable_store', False):
             self.init_store()
@@ -144,7 +143,7 @@ class Flow(object):
                         except Exception as err:
                             logging.warning("Flow.__init__: can't load diagram %s: %s" % (name, err))
         else:
-            logging.warning("Store disabled.")
+            logging.debug("Store disabled.")
 
         self.operational_status = self.OP_STATUS_READY
         self.available_versions = []
@@ -267,7 +266,7 @@ class Flow(object):
             self.last_record_timestamp = timestamp
 
     # handle messages from server (sent via websocket)
-    def _calcAutoInterval(self, start, end):
+    def calc_auto_interval(self, start, end):
         """Calculate automatic interval.
           About 120 records should fit in start/end range.
 
@@ -353,62 +352,7 @@ class Flow(object):
                 self.send_message('device_added', device.as_dict())
 
         elif type == 'history':
-            # history is currently only used for sending local history
-            #  over ble
-            #  Sample parameters for type history: {u'count': 100000, u'start_timestamp': u'2017-06-15T23:50:19.567Z', 
-            #    u'name': u'temperature', u'end_timestamp': u'2017-06-16T00:00:19.567Z'}
-            history = []
-            if self.store:
-                name = params.get("name")
-                start = params.get("start_timestamp")
-                end = params.get("end_timestamp")
-                count = params.get("count")
-                # auto interval allows for automatic adjustment of history timestamp interval
-                #   so that it fits into ble packet (< 120 records)
-                autoInterval = params.get("autoInterval")
-                interval = None
-                if autoInterval is None:
-                    autoInterval = True
-                if autoInterval:
-                    #
-                    interval = self._calcAutoInterval(start, end)
-                    #
-                try:
-                    if interval:
-                        query = \
-                          """SELECT mean(mean) from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' group by time(%s) limit %s""" % \
-                          (name, start, end, interval, count) 
-                    else:
-                        query = \
-                          """SELECT mean from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' limit %s""" % \
-                          (name, start, end, count) 
-                    logging.debug("interval=%s, query=%s" % (interval, query))
-                    rs = self.store.query(query)
-
-                    # sample data:
-                    # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
-                    #  u'max': 245, u'time': u'2017-06-16T20:42:00Z', u'mean': 244.8}, ...
-  
-                    points = list(rs.get_points())
-                    #logging.debug("%d points: first 10: %s" % (len(points), points[:10]))
-
-                    if c.config.get('enable_ble', False) and self.publisher:
-                        # extract rounded numbers for 'mean' field
-                        values = [round(x['mean'],2) if isinstance(x['mean'], numbers.Number) else x['mean']  for x in points]
-                        timestamps = [x['time'] for x in points]
-                        if not values:
-                            values = [0,0]
-                            timestamps = [start, end]
-                        jsonobj = {"type": type, "parameters": { "name": name, 
-                          "values": values, "timestamps": timestamps }
-                        }
-                        #jsonmsg = '{"type":"sensor_update","parameters":{"values":[388.0],"name":"light"}}'
-                        jsonmsg = json.dumps(jsonobj)
-                        #logging.debug('mqtt published : %s' % jsonmsg)
-                        self.publisher.publish(jsonmsg)
-                except Exception as err:
-                    logging.error("store.query error: %s" % err)
-            #self.send_message('history', {'values': history})
+            self.send_history(params)
         elif type == 'request_block_types':
             block_types = hjson.loads(open('block_types.hjson').read())
             self.send_message('block_types', block_types)
@@ -633,6 +577,66 @@ class Flow(object):
         sequence_prefix = c.path_on_server() + '/'
         values = {sequence_prefix + b.name: b.value for b in blocks}
         c.update_sequences(values, timestamp)
+
+    # send locally recorded time series data to browser
+    def send_history(self, params):
+
+        # history is currently only used for sending local history
+        #  over ble
+        #  Sample parameters for type history: {u'count': 100000, u'start_timestamp': u'2017-06-15T23:50:19.567Z', 
+        #    u'name': u'temperature', u'end_timestamp': u'2017-06-16T00:00:19.567Z'}
+        history = []
+        if self.store:
+            name = params.get("name")
+            start = params.get("start_timestamp")
+            end = params.get("end_timestamp")
+            count = params.get("count")
+            # auto interval allows for automatic adjustment of history timestamp interval
+            #   so that it fits into ble packet (< 120 records)
+            auto_interval = params.get("auto_interval")
+            interval = None
+            if auto_interval is None:
+                auto_interval = True
+            if auto_interval:
+                #
+                interval = self.calc_auto_interval(start, end)
+                #
+            try:
+                if interval:
+                    query = \
+                      """SELECT mean(mean) from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' group by time(%s) limit %s""" % \
+                      (name, start, end, interval, count) 
+                else:
+                    query = \
+                      """SELECT mean from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' limit %s""" % \
+                      (name, start, end, count) 
+                logging.debug("interval=%s, query=%s" % (interval, query))
+                rs = self.store.query(query)
+
+                # sample data:
+                # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
+                #  u'max': 245, u'time': u'2017-06-16T20:42:00Z', u'mean': 244.8}, ...
+
+                points = list(rs.get_points())
+                #logging.debug("%d points: first 10: %s" % (len(points), points[:10]))
+
+                if c.config.get('enable_ble', False) and self.publisher:
+                    # extract rounded numbers for 'mean' field
+                    values = [round(x['mean'],2) if isinstance(x['mean'], numbers.Number) else x['mean']  for x in points]
+                    timestamps = [x['time'] for x in points]
+                    if not values:
+                        values = [0,0]
+                        timestamps = [start, end]
+                    jsonobj = {"type": type, "parameters": { "name": name, 
+                      "values": values, "timestamps": timestamps }
+                    }
+                    #jsonmsg = '{"type":"sensor_update","parameters":{"values":[388.0],"name":"light"}}'
+                    jsonmsg = json.dumps(jsonobj)
+                    #logging.debug('mqtt published : %s' % jsonmsg)
+                    self.publisher.publish(jsonmsg)
+            except Exception as err:
+                logging.error("store.query error: %s" % err)
+        #self.send_message('history', {'values': history})
 
     #
     # send client info to server/browser
