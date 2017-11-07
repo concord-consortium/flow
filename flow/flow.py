@@ -147,6 +147,10 @@ class Flow(object):
 
         self.operational_status = self.OP_STATUS_READY
         self.available_versions = []
+        self.username           = None
+        self.recording_location = None  # Folder paht on server of
+                                        # named dataset
+        self.recording_greenlet = None  # The greenlet.
 
 
     # MQTT integration
@@ -195,7 +199,7 @@ class Flow(object):
     def start(self):
 
         # launch a greenlet to check for devices being plugged in
-        gevent.spawn(self.check_devices)
+        # gevent.spawn(self.check_devices)
 
         # launch a greenlet to send watchdog messages to server
         gevent.spawn(self.send_watchdog)
@@ -325,6 +329,7 @@ class Flow(object):
         # Messages allowed when in recording mode
         #
         allowed_when_recording = [  'stop_recording',
+                                    'stop_diagram',
                                     'list_diagrams',
                                     'request_status',
                                     'rename_diagram',
@@ -338,9 +343,17 @@ class Flow(object):
         if self.recording_interval is not None:
             if not type in allowed_when_recording:
                 logging.debug("Message %s not allowed while recording." % (type))
+                username = self.username
+                diagram_name = None
+                if self.diagram:
+                    diagram_name = self.diagram.name
+
                 self.send_message(type + '_response',
-                        {   'success': False,
-                            'message': 'Cannot perform operation %s while controller is recording.' % (type)
+                        {   'success':  False,
+                            'error':    'recording_in_progress',
+                            'data':     {   'username': username,
+                                            'diagram':  diagram_name },
+                            'message':  'Cannot perform operation %s while controller is recording.' % (type)
                         })
                 self.last_user_message_time = time.time()
                 return True
@@ -415,15 +428,47 @@ class Flow(object):
 
         elif type == 'set_diagram':
 
-            diagram_spec = params['diagram']
+            #
+            # v2.0 messages should associate a username with a running
+            # program.
+            #
+            if set(('diagram', 'username')) <= set(params):
+                diagram_spec = params['diagram']
 
-            name = '_temp_'
-            if 'name' in diagram_spec:
-                name = diagram_spec['name']
-            logging.debug(
-                "handle_message: set_diagram name %s" % (name))
+                if 'name' not in diagram_spec:
+                    self.send_message(
+                                type + '_response',
+                                {   'success': False,
+                                    'message': "No program name specified."
+                                })
+                    return
 
-            self.diagram = Diagram(name, diagram_spec)
+                name            = diagram_spec['name']
+                self.diagram    = Diagram(name, diagram_spec)
+                self.username   = params['username']
+
+                self.send_message(
+                                type + '_response',
+                                {   'success': True,
+                                    'message': "Set running program %s for user %s." % (name, self.username)
+                                })
+
+            else:
+
+                #
+                # Support legacy flow for backwards compatibility.
+                # TODO remove this once v1.0 is no longer supported.
+                #
+
+                diagram_spec = params['diagram']
+
+                name = '_temp_'
+                if 'name' in diagram_spec:
+                    name = diagram_spec['name']
+                logging.debug(
+                    "handle_message: set_diagram name %s" % (name))
+
+                self.diagram = Diagram(name, diagram_spec)
 
         elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
 
@@ -443,16 +488,74 @@ class Flow(object):
 
 
         elif type == 'stop_diagram':
-            pass
+
+            #
+            # Set this recording as done.
+            #
+            if self.recording_location:
+                metadata = c.resources.read_file(self.recording_location + "/metadata")
+                if metadata is not None:
+                    metadata = json.loads(metadata)
+                    metadata['recording'] = False
+                    c.resources.write_file(
+                        self.recording_location + "/metadata",
+                        json.dumps(metadata) )
+                else:
+                    c.resources.write_file(
+                        self.recording_location + "/metadata",
+                        json.dumps({    'controller_path': c.path_on_server(),
+                                        'recording': False,
+                                        'recording_interval': self.recording_interval }))
+ 
+            #
+            # Stop recording if in progress.
+            # Remove the currently running diagram program.
+            # Remove the currently set user.
+            #
+            self.recording_interval = None
+            self.recording_location = None
+            self.diagram            = None
+            self.username           = None
+
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Program stopped"
+                                })
+
         elif type == 'start_recording':
+
             self.recording_interval = int(params['rate'])
             self.run_name = params.get('run_name')
             if not self.run_name:
                 self.run_name = "Noname"
-            logging.info('start recording data (every %.2f seconds)' % self.recording_interval)
+
+            self.recording_location = params.get('recording_location')
+            if not self.recording_location:
+                self.recording_location = c.path_on_server()
+           
+            logging.info('start recording data (every %.2f seconds) to location %s' % (self.recording_interval, self.recording_location))
             if self.store:
                 # save start for named run, (Noname if not given)
                 self.store.save('run', self.run_name, self.recording_interval, {'action': 'start'})
+
+            #
+            # Create sequences for blocks and create metadata file.
+            #
+            logging.info("Creating sequences...")
+            c.resources.create_folder(self.recording_location);
+            c.resources.write_file(
+                self.recording_location + "/metadata",
+                json.dumps({    'controller_path': c.path_on_server(),
+                                'recording': True,
+                                'recording_interval': self.recording_interval }))
+                
+            self.recording_greenlet = gevent.spawn(self.check_devices)
+
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Recording started."
+                                })
+
         elif type == 'stop_recording':
             logging.info('stop recording data')
             if self.store:
@@ -462,6 +565,13 @@ class Flow(object):
                 else:
                     logging.info('stop recording data not saved (recording_interval none)')
             self.recording_interval = None
+            self.recording_location = None
+            self.recording_greenlet.kill()
+
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Recording stopped."
+                                })
 
         elif type == 'rename_block':
             old_name = params['old_name']
@@ -574,8 +684,9 @@ class Flow(object):
                         logging.error("store.save error: %s" % err)
 
         # store blocks on server
-        sequence_prefix = c.path_on_server() + '/'
+        sequence_prefix = self.recording_location + '/'
         values = {sequence_prefix + b.name: b.value for b in blocks}
+        logging.debug('c.update_sequences %s' % (values))
         c.update_sequences(values, timestamp)
 
     # send locally recorded time series data to browser
@@ -662,6 +773,7 @@ class Flow(object):
         status = {
             'operational_status':   self.operational_status,
             'available_versions':   self.available_versions,
+            'username':             self.username,
             'flow_version':         Flow.FLOW_VERSION,
             'lib_version':          c.VERSION + ' ' + c.BUILD,
             'device_count':         len(c.auto_devices._auto_devices),
@@ -674,6 +786,7 @@ class Flow(object):
             status['current_diagram'] = self.diagram.name
         else:
             logging.debug("No diagram name to set.")
+            status['current_diagram'] = None
 
         self.send_message('status', status)
 
@@ -686,6 +799,10 @@ class Flow(object):
 
         # get list of existing sequences
         server_path = c.path_on_server()
+
+        if self.recording_location:
+            server_path = self.recording_location
+
         print('server path: %s' % server_path)
         file_infos = c.resources.list_files(server_path, type = 'sequence')
         server_seqs = set([fi['name'] for fi in file_infos])
