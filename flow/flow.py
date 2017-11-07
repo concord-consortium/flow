@@ -149,6 +149,9 @@ class Flow(object):
         self.operational_status = self.OP_STATUS_READY
         self.available_versions = []
         self.username           = None
+        self.recording_location = None  # Folder paht on server of
+                                        # named dataset
+        self.recording_greenlet = None  # The greenlet.
 
 
     # MQTT integration
@@ -197,7 +200,7 @@ class Flow(object):
     def start(self):
 
         # launch a greenlet to check for devices being plugged in
-        gevent.spawn(self.check_devices)
+        # gevent.spawn(self.check_devices)
 
         # launch a greenlet to send watchdog messages to server
         gevent.spawn(self.send_watchdog)
@@ -548,22 +551,42 @@ class Flow(object):
             # Remove the currently set user.
             #
             self.recording_interval = None
+            self.recording_location = None
             self.diagram            = None
             self.username           = None
+
             self.send_message(  type + '_response',
                                 {   'success': True,
                                     'message': "Program stopped"
                                 })
 
         elif type == 'start_recording':
+
             self.recording_interval = int(params['rate'])
             self.run_name = params.get('run_name')
             if not self.run_name:
                 self.run_name = "Noname"
-            logging.info('start recording data (every %.2f seconds)' % self.recording_interval)
+
+            self.recording_location = params.get('recording_location')
+            if not self.recording_location:
+                self.recording_location = c.path_on_server()
+           
+            logging.info('start recording data (every %.2f seconds) to location %s' % (self.recording_interval, self.recording_location))
             if self.store:
                 # save start for named run, (Noname if not given)
                 self.store.save('run', self.run_name, self.recording_interval, {'action': 'start'})
+
+            #
+            # Create sequences for blocks and create metadata file.
+            #
+            logging.info("Creating sequences...")
+            c.resources.create_folder(self.recording_location);
+            c.resources.write_file(
+                self.recording_location + "/metadata",
+                json.dumps({    'recording': True,
+                                'recording_interval': self.recording_interval }))
+                
+            self.recording_greenlet = gevent.spawn(self.check_devices)
 
             self.send_message(  type + '_response',
                                 {   'success': True,
@@ -579,7 +602,13 @@ class Flow(object):
                 else:
                     logging.info('stop recording data not saved (recording_interval none)')
             self.recording_interval = None
+            self.recording_location = None
+            self.recording_greenlet.kill()
 
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Recording stopped."
+                                })
 
         elif type == 'rename_block':
             old_name = params['old_name']
@@ -692,8 +721,9 @@ class Flow(object):
                         logging.error("store.save error: %s" % err)
 
         # store blocks on server
-        sequence_prefix = c.path_on_server() + '/'
+        sequence_prefix = self.recording_location + '/'
         values = {sequence_prefix + b.name: b.value for b in blocks}
+        logging.debug('c.update_sequences %s' % (values))
         c.update_sequences(values, timestamp)
 
     #
@@ -746,6 +776,10 @@ class Flow(object):
 
         # get list of existing sequences
         server_path = c.path_on_server()
+
+        if self.recording_location:
+            server_path = self.recording_location
+
         print('server path: %s' % server_path)
         file_infos = c.resources.list_files(server_path, type = 'sequence')
         server_seqs = set([fi['name'] for fi in file_infos])
