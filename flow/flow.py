@@ -546,6 +546,24 @@ class Flow(object):
         elif type == 'stop_diagram':
 
             #
+            # Set this recording as done.
+            #
+            if self.recording_location:
+                metadata = c.resources.read_file(self.recording_location + "/metadata")
+                if metadata is not None:
+                    metadata = json.loads(metadata)
+                    metadata['recording'] = False
+                    c.resources.write_file(
+                        self.recording_location + "/metadata",
+                        json.dumps(metadata) )
+                else:
+                    c.resources.write_file(
+                        self.recording_location + "/metadata",
+                        json.dumps({    'controller_path': c.path_on_server(),
+                                        'recording': False,
+                                        'recording_interval': self.recording_interval }))
+ 
+            #
             # Stop recording if in progress.
             # Remove the currently running diagram program.
             # Remove the currently set user.
@@ -583,7 +601,8 @@ class Flow(object):
             c.resources.create_folder(self.recording_location);
             c.resources.write_file(
                 self.recording_location + "/metadata",
-                json.dumps({    'recording': True,
+                json.dumps({    'controller_path': c.path_on_server(),
+                                'recording': True,
                                 'recording_interval': self.recording_interval }))
                 
             self.recording_greenlet = gevent.spawn(self.check_devices)
