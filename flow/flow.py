@@ -626,14 +626,15 @@ class Flow(object):
             c.resources.create_folder(self.recording_location);
             c.resources.write_file(
                 self.recording_location + "/metadata",
-                json.dumps({    'controller_path': c.path_on_server(),
-                                'controller_name': self.controller_name(),
-                                'program':  self.diagram.diagram_spec,
-                                'recording': True,
-                                'start_time': time.time(),
-                                'recording_location': self.recording_location,
-                                'recording_user': self.username,
-                                'recording_interval': self.recording_interval }))
+                json.dumps({    
+                        'controller_path': c.path_on_server(),
+                        'controller_name': self.controller_name(),
+                        'program':  self.diagram.diagram_spec,
+                        'recording': True,
+                        'start_time': '%s' % (datetime.datetime.utcnow()),
+                        'recording_location': self.recording_location,
+                        'recording_user': self.username,
+                        'recording_interval': self.recording_interval }))
                 
             self.recording_greenlet = gevent.spawn(self.check_devices)
 
