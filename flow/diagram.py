@@ -18,6 +18,12 @@ class Diagram(object):
                 source_block.dest_ids.append(block.id)
                 block.sources.append(source_block)
 
+        # For now set the original diagram here. This might need to
+        # change if we are updating the diagram on the controller.
+        # Perhaps dynamically recreate this json from the
+        # block list.
+        self.diagram_spec = diagram_spec
+
     # get a block by ID; returns None if none found
     def find_block_by_id(self, id):
         for block in self.blocks:

@@ -148,7 +148,7 @@ class Flow(object):
         self.operational_status = self.OP_STATUS_READY
         self.available_versions = []
         self.username           = None
-        self.recording_location = None  # Folder paht on server of
+        self.recording_location = None  # Folder path on server of
                                         # named dataset
         self.recording_greenlet = None  # The greenlet.
 
@@ -490,23 +490,48 @@ class Flow(object):
         elif type == 'stop_diagram':
 
             #
+            # Need to update the metadata in the recording location
+            # indicating that we are no longer recording to that location.
+            # Note if a controller dies while recording, the metadata
+            # will still indicate 'recording: True', so someone might stop
+            # a recording (to update the metadata to set 'recording: False') 
+            # even though the controller might no longer be recording to that
+            # location. There should probably be a better way to handle this.
+            #
+            stop_location = params.get('stop_location')
+            if stop_location is None:
+                stop_location = self.recording_location
+
+            #
             # Set this recording as done.
             #
-            if self.recording_location:
-                metadata = c.resources.read_file(self.recording_location + "/metadata")
+            if stop_location:
+                metadata = c.resources.read_file(stop_location + "/metadata")
                 if metadata is not None:
                     metadata = json.loads(metadata)
                     metadata['recording'] = False
                     c.resources.write_file(
-                        self.recording_location + "/metadata",
+                        stop_location + "/metadata",
                         json.dumps(metadata) )
                 else:
                     c.resources.write_file(
-                        self.recording_location + "/metadata",
+                        stop_location + "/metadata",
                         json.dumps({    'controller_path': c.path_on_server(),
                                         'recording': False,
                                         'recording_interval': self.recording_interval }))
  
+            if self.recording_location != stop_location:
+                #
+                # We are not really recording to the location we
+                # have been asked to "stop" so just update the
+                # above metadata and continue.
+                #
+                self.send_message(  type + '_response',
+                                    {   'success': True,
+                                        'message': "This controller was no longer recording at that location, but the recording has been marked as stopped."
+                                    })
+                return
+
             #
             # Stop recording if in progress.
             # Remove the currently running diagram program.
@@ -521,6 +546,12 @@ class Flow(object):
                                 {   'success': True,
                                     'message': "Program stopped"
                                 })
+            #
+            # Ensure latest status reflects that this controller is
+            # not recording.
+            #
+            self.send_status()
+
 
         elif type == 'start_recording':
 
@@ -545,9 +576,15 @@ class Flow(object):
             c.resources.create_folder(self.recording_location);
             c.resources.write_file(
                 self.recording_location + "/metadata",
-                json.dumps({    'controller_path': c.path_on_server(),
-                                'recording': True,
-                                'recording_interval': self.recording_interval }))
+                json.dumps({    
+                        'controller_path': c.path_on_server(),
+                        'controller_name': self.controller_name(),
+                        'program':  self.diagram.diagram_spec,
+                        'recording': True,
+                        'start_time': '%s' % (datetime.datetime.utcnow()),
+                        'recording_location': self.recording_location,
+                        'recording_user': self.username,
+                        'recording_interval': self.recording_interval }))
                 
             self.recording_greenlet = gevent.spawn(self.check_devices)
 
@@ -556,8 +593,15 @@ class Flow(object):
                                     'message': "Recording started."
                                 })
 
+            #
+            # Ensure latest status reflects that this controller is
+            # recording.
+            #
+            self.send_status()
+
         elif type == 'stop_recording':
             logging.info('stop recording data')
+
             if self.store:
                 # save stop for current run
                 if self.recording_interval:
@@ -886,6 +930,13 @@ class Flow(object):
                 for block in self.diagram.blocks:
                     if block.type == 'camera':
                         block.value = data
+
+    #
+    # Get user friendly controller display name
+    #
+    def controller_name(self):
+        parts = c.path_on_server().split('/')
+        return parts[-1]
 
 
 # ======== UTILITY FUNCTIONS ========
