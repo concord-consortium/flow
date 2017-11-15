@@ -602,6 +602,12 @@ class Flow(object):
                                 {   'success': True,
                                     'message': "Program stopped"
                                 })
+            #
+            # Ensure latest status reflects that this controller is
+            # not recording.
+            #
+            self.send_status()
+
 
         elif type == 'start_recording':
 
@@ -642,6 +648,12 @@ class Flow(object):
                                 {   'success': True,
                                     'message': "Recording started."
                                 })
+
+            #
+            # Ensure latest status reflects that this controller is
+            # recording.
+            #
+            self.send_status()
 
         elif type == 'stop_recording':
             logging.info('stop recording data')
