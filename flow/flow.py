@@ -507,7 +507,7 @@ class Flow(object):
             #
             if stop_location:
                 if not stop_location.startswith('/'):
-                    stop_location = '/' + path
+                    stop_location = '/' + stop_location
 
                 metadata = c.resources.read_file(stop_location + "/metadata")
                 if metadata is not None:
