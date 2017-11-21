@@ -506,10 +506,14 @@ class Flow(object):
             # Set this recording as done.
             #
             if stop_location:
+                if not stop_location.startswith('/'):
+                    stop_location = '/' + stop_location
+
                 metadata = c.resources.read_file(stop_location + "/metadata")
                 if metadata is not None:
                     metadata = json.loads(metadata)
                     metadata['recording'] = False
+                    metadata['end_time'] = '%s' % (datetime.datetime.utcnow())
                     c.resources.write_file(
                         stop_location + "/metadata",
                         json.dumps(metadata) )
