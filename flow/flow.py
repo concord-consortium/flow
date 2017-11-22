@@ -145,12 +145,27 @@ class Flow(object):
         else:
             logging.debug("Store disabled.")
 
-        self.operational_status = self.OP_STATUS_READY
-        self.available_versions = []
-        self.username           = None
-        self.recording_location = None  # Folder path on server of
-                                        # named dataset
-        self.recording_greenlet = None  # The greenlet.
+
+        self.operational_status     = self.OP_STATUS_READY
+
+        self.available_versions     = []    # Available software versions
+
+        self.username               = None  # User currently recording
+
+        self.recording_location     = None  # Folder path on server of
+                                            # named dataset
+
+        self.recording_greenlet     = None  # The recording greenlet.
+
+        self.sensor_data_latest     = {}    # For the sensor data greenlet,
+                                            # keep the last input_handler
+                                            # value received for each physical
+                                            # device so that we can return
+                                            # sensor data to the user without
+                                            # having a diagram loaded.
+
+        self.sensor_data_greenlet   = None  # Greenlet for sending sensor
+                                            # data over the websocket.
 
 
     # MQTT integration
@@ -621,6 +636,24 @@ class Flow(object):
                                     'message': "Recording stopped."
                                 })
 
+        elif type == 'send_sensor_data':
+
+            if self.sensor_data_greenlet is not None:
+                return
+
+            stoptime = params.get('stoptime')
+            if stoptime is None:
+                stoptime = 15
+
+            self.sensor_data_greenlet = gevent.spawn(   self.send_sensor_data, 
+                                                        stoptime )
+
+            self.send_message(  type + '_response',
+                                {   'success': True,
+                                    'message': "Sending sensor data."
+                                })
+
+
         elif type == 'rename_block':
             old_name = params['old_name']
             new_name = params['new_name']
@@ -690,9 +723,21 @@ class Flow(object):
             # send message to websocket
             c.send_message(type, parameters)
 
-    # handle an incoming value from a sensor device (connected via USB)
+    #
+    # Handle an incoming value from a sensor device (connected via USB)
+    #
+    # Duplicate device types append a space followed by an integer
+    # starting at 2. E.g.:
+    #
+    # "CO2"
+    # "CO2 2"
+    # "humidity"
+    # "humidity 2"
+    #
+    # How do we map these?
+    #
     def handle_input(self, name, values):
-        #logging.debug('input_handler: name=%s, values[0]=%s' % (name, values[0]))
+        # logging.debug('input_handler: name=%s, values[0]=%s' % (name, values[0]))
         # ---- start of send_message replacement (store and ble test without diagram open)
         if self.integ_test:
             if self.store:
@@ -715,6 +760,14 @@ class Flow(object):
             if block:
                 block.decimal_places = block.compute_decimal_places(values[0])
                 block.value = float(values[0])
+     
+        #
+        # Store last read sensor data associated with a physical sensor.
+        #
+        now     = datetime.datetime.utcnow()
+        value   = float(values[0])
+        self.sensor_data_latest[name] = (now, value)
+
 
     # record data by sending it to the server and/or storing it locally
     def record_data(self, blocks, timestamp):
@@ -871,6 +924,66 @@ class Flow(object):
 
             # sleep for a bit
             c.sleep(5)
+
+
+    #
+    # Send all sensor data over websocket including sensor values
+    # Stop after specified number of minutes.
+    #
+    def send_sensor_data(self, minutes):
+
+        timestamp   = datetime.datetime.utcnow().replace(microsecond=0)
+        stoptime    = timestamp + datetime.timedelta(minutes=minutes)
+        
+        logging.debug("send_sensor_data start: %s stop: %s" % 
+                        (timestamp, stoptime))
+
+        while True:
+
+            #
+            # Only loop for the specified number of minutes
+            #
+            if datetime.datetime.utcnow() > stoptime:
+                logging.debug("Stopping send_sensor_data")
+                self.sensor_data_greenlet = None
+                break
+
+            #
+            # For each sensor, collect data to send.
+            #
+            data = []
+            for device in c.auto_devices._auto_devices:
+
+                dict    = device.as_dict()
+                name    = dict['name']
+                value   = None
+
+                if name in self.sensor_data_latest:
+                    (time, value) = self.sensor_data_latest[name]
+                    #
+                    # How to decide when a value is stale?
+                    # This might not be necessary since _auto_devices
+                    # removes the unplugged USB device...
+                    #
+                    now = datetime.datetime.utcnow()
+                    if time < now - datetime.timedelta(seconds=5):
+                        value = None
+
+                dict['value'] = value
+                data.append(dict)
+            
+            #
+            # Send all sensor data.
+            #
+            c.send_message('send_sensor_data_response', 
+                            {   'success':      True,
+                                'data':         data,
+                                'src_folder':   c.path_on_server()  } )
+            #
+            # Sleep
+            #
+            c.sleep(1)
+
 
     #
     # Send watchdog message to server so that it knows which 
