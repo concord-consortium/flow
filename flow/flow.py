@@ -443,47 +443,7 @@ class Flow(object):
 
         elif type == 'set_diagram':
 
-            #
-            # v2.0 messages should associate a username with a running
-            # program.
-            #
-            if set(('diagram', 'username')) <= set(params):
-                diagram_spec = params['diagram']
-
-                if 'name' not in diagram_spec:
-                    self.send_message(
-                                type + '_response',
-                                {   'success': False,
-                                    'message': "No program name specified."
-                                })
-                    return
-
-                name            = diagram_spec['name']
-                self.diagram    = Diagram(name, diagram_spec)
-                self.username   = params['username']
-
-                self.send_message(
-                                type + '_response',
-                                {   'success': True,
-                                    'message': "Set running program %s for user %s." % (name, self.username)
-                                })
-
-            else:
-
-                #
-                # Support legacy flow for backwards compatibility.
-                # TODO remove this once v1.0 is no longer supported.
-                #
-
-                diagram_spec = params['diagram']
-
-                name = '_temp_'
-                if 'name' in diagram_spec:
-                    name = diagram_spec['name']
-                logging.debug(
-                    "handle_message: set_diagram name %s" % (name))
-
-                self.diagram = Diagram(name, diagram_spec)
+            self.set_diagram(params)
 
         elif type == 'start_diagram':  # start a diagram running on the controller; this will stop any diagram that is already running
 
@@ -573,6 +533,14 @@ class Flow(object):
 
 
         elif type == 'start_recording':
+
+            #
+            # Allow 'set_diagram' and 'start_recording' to be
+            # an atomic operation.
+            # Caller can specify diagram and username in params.
+            #
+            if set(('diagram', 'username')) <= set(params):
+                self.set_diagram(params)
 
             self.recording_interval = int(params['rate'])
             self.run_name = params.get('run_name')
@@ -1054,6 +1022,54 @@ class Flow(object):
     def controller_name(self):
         parts = c.path_on_server().split('/')
         return parts[-1]
+
+    #
+    # Set the currently running diagram
+    #
+    def set_diagram(self, params):
+
+        #
+        # v2.0 messages should associate a username with a running
+        # program.
+        #
+        if set(('diagram', 'username')) <= set(params):
+            diagram_spec = params['diagram']
+
+            if 'name' not in diagram_spec:
+                self.send_message(
+                            'set_diagram_response',
+                            {   'success': False,
+                                'message': "No program name specified."
+                            })
+                return
+
+            name            = diagram_spec['name']
+            self.diagram    = Diagram(name, diagram_spec)
+            self.username   = params['username']
+
+            self.send_message(
+                            'set_diagram_response',
+                            {   'success': True,
+                                'message': "Set running program %s for user %s." % (name, self.username)
+                            })
+
+        else:
+
+            #
+            # Support legacy flow for backwards compatibility.
+            # TODO remove this once v1.0 is no longer supported.
+            #
+
+            diagram_spec = params['diagram']
+
+            name = '_temp_'
+            if 'name' in diagram_spec:
+                name = diagram_spec['name']
+            logging.debug(
+                "handle_message: set_diagram name %s" % (name))
+
+            self.diagram = Diagram(name, diagram_spec)
+
 
 
 # ======== UTILITY FUNCTIONS ========
