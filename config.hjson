@@ -6,3 +6,5 @@ camera: {
 	width: 1296
 	height: 972
 }
+serial: {
+}
