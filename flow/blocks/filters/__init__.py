@@ -20,17 +20,3 @@ class Filter(Block):
         imageString = cStringIO.StringIO(base64.b64decode(image_string))
         outImage = Image.open(imageString)
         return outImage
-
-    # a helper function for reading from a list of parameters
-    def read_param(self, params, name, default=None):
-        if params is not None:
-            param = self.read_param_obj(params, name)
-            if param:
-                return param['value']
-        return default
-
-    def read_param_obj(self, params, name):
-        for param in params:
-            if param['name'] == name:
-                return param
-        return None

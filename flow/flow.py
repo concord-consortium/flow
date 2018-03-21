@@ -280,7 +280,15 @@ class Flow(object):
 
         # send sequence values
         if self.recording_interval and ((self.last_record_timestamp is None) or timestamp >= self.last_record_timestamp + datetime.timedelta(seconds = self.recording_interval)):
-            record_blocks = [b for b in self.diagram.blocks if not b.input_type]
+            data_storage_block = None
+            for block in self.diagram.blocks:
+                if block.type == 'data storage':
+                    data_storage_block = block
+                    break
+            if data_storage_block:  # if data storage block is defined, store everything that feeds into it
+                record_blocks = [b for b in data_storage_block.sources]
+            else:  # legacy support: store everything that doesn't have an input
+                record_blocks = [b for b in self.diagram.blocks if not b.input_type]
             self.record_data(record_blocks, timestamp)
             self.last_record_timestamp = timestamp
 
@@ -863,7 +871,7 @@ class Flow(object):
         own_path = c.path_on_server()
         c.resources.send_request_to_server('PUT', '/api/v1/resources' + own_path, {'status': json.dumps(status)})
 
-    # check for new devices and create sequences for them (run this as a greenlet
+    # check for new devices and create sequences for them (run this as a greenlet)
     def check_devices(self):
 
         # get list of existing sequences
@@ -1070,6 +1078,11 @@ class Flow(object):
 
             self.diagram = Diagram(name, diagram_spec)
 
+        # if the diagram contains a data storage block, update our recording interval
+        for block in self.diagram.blocks:
+            if block.type == 'data storage':
+                self.recording_interval = block.read_param(block.params, 'recording_interval')
+                break
 
 
 # ======== UTILITY FUNCTIONS ========

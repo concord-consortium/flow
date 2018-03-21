@@ -1,4 +1,4 @@
-from blocks import createBlock
+from blocks import create_block
 
 
 # represents a data flow diagram
@@ -9,7 +9,7 @@ class Diagram(object):
         self.name = name
         self.blocks = []
         for block_spec in diagram_spec['blocks']:
-            self.blocks.append(createBlock(block_spec))
+            self.blocks.append(create_block(block_spec))
 
         # set source and destination blocks for each block using source_ids
         for block in self.blocks:

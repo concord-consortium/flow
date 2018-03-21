@@ -115,3 +115,17 @@ class Block(object):
     # examples: "1e-11" = 11, "10.0001" = 4
     def compute_decimal_places(self, num_str):
         return abs(Decimal(str(num_str)).as_tuple().exponent)
+
+    # a helper function for reading from a list of parameters
+    def read_param(self, params, name, default=None):
+        if params is not None:
+            param = self.read_param_obj(params, name)
+            if param:
+                return param['value']
+        return default
+
+    def read_param_obj(self, params, name):
+        for param in params:
+            if param['name'] == name:
+                return param
+        return None

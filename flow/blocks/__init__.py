@@ -3,6 +3,7 @@ from filters.brightness import Brightness
 from filters.operator import Operator
 from filters.sma import SimpleMovingAverage
 from filters.ema import ExponentialMovingAverage
+from timer import Timer
 from block import Block
 
 non_operator_blocks = {
@@ -13,11 +14,15 @@ non_operator_blocks = {
 }
 
 
-def createBlock(block_spec):
+def create_block(block_spec):
     name = block_spec.get('name', None)
     block = None
     print block_spec
-    if type is not None:
+    if type == 'timer':
+        block = Timer(block_spec)
+    elif type == 'data storage':
+        block = Block(block_spec)
+    elif type:
         class_definition = non_operator_blocks.get(name.lower(), None)
         if class_definition is None:
             class_definition = Operator
