@@ -155,7 +155,7 @@ class Flow(object):
         self.recording_location     = None  # Folder path on server of
                                             # named dataset
 
-        self.recording_greenlet     = None  # The recording greenlet.
+        self.device_check_greenlet  = None  # The recording greenlet.
 
         self.sensor_data_latest     = {}    # For the sensor data greenlet,
                                             # keep the last input_handler
@@ -580,8 +580,18 @@ class Flow(object):
                         'recording_location': self.recording_location,
                         'recording_user': self.username,
                         'recording_interval': self.recording_interval }))
-                
-            self.recording_greenlet = gevent.spawn(self.check_devices)
+
+            # check for data storage block
+            data_storage_block = None
+            for block in self.diagram.blocks:
+                if block.type == 'data storage':
+                    data_storage_block = block
+                    break
+            if data_storage_block:  # if data storage block is defined, store everything that feeds into it
+                record_blocks = [b for b in data_storage_block.sources]
+                self.create_sequences(record_blocks)
+            else:  # legacy support: create sequences for any input devices
+                self.device_check_greenlet = gevent.spawn(self.check_devices)
 
             self.send_message(  type + '_response',
                                 {   'success': True,
@@ -605,7 +615,8 @@ class Flow(object):
                     logging.info('stop recording data not saved (recording_interval none)')
             self.recording_interval = None
             self.recording_location = None
-            self.recording_greenlet.kill()
+            if self.device_check_greenlet:
+                self.device_check_greenlet.kill()
 
             self.send_message(  type + '_response',
                                 {   'success': True,
@@ -876,10 +887,8 @@ class Flow(object):
 
         # get list of existing sequences
         server_path = c.path_on_server()
-
         if self.recording_location:
             server_path = self.recording_location
-
         print('server path: %s' % server_path)
         file_infos = c.resources.list_files(server_path, type = 'sequence')
         server_seqs = set([fi['name'] for fi in file_infos])
@@ -901,6 +910,25 @@ class Flow(object):
             # sleep for a bit
             c.sleep(5)
 
+    # create sequences on server for the given blocks
+    def create_sequences(self, blocks):
+
+        # get list of existing sequences
+        print('recording location: %s' % self.recording_location)
+        file_infos = c.resources.list_files(self.recording_location, type = 'sequence')
+        server_seqs = set([fi['name'] for fi in file_infos])
+        print('server seqs: %s' % server_seqs)
+
+        # create a sequence for each block (that doesn't already have a sequence)
+        for block in blocks:
+            if block.name not in server_seqs:
+                device = c.auto_devices.find_device(block.name)
+                units = device.units if device else None
+                create_sequence(self.recording_location, block.name, data_type=1, units=units)  # data_type 1 is numeric
+                server_seqs.add(block.name)
+
+            # sleep for a bit
+            c.sleep(5)
 
     #
     # Send all sensor data over websocket including sensor values
