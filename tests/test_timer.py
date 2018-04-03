@@ -11,7 +11,8 @@ def test_timer():
         'sources': [],
         'input_count': 0,
         'input_type': '',
-        'output_type': '',
+        'output_count': 1,
+        'output_type': 'n',
     }
     timer = Timer(block_spec)
     for i in range(20):

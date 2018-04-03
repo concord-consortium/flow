@@ -15,19 +15,19 @@ non_operator_blocks = {
 
 
 def create_block(block_spec):
-    name = block_spec.get('name', None)
+    type_name = block_spec.get('type')
     block = None
     print block_spec
-    if type == 'timer':
+    if type_name == 'timer':
         block = Timer(block_spec)
-    elif type == 'data storage':
+    elif type_name == 'data storage':
         block = Block(block_spec)
-    elif type:
-        class_definition = non_operator_blocks.get(name.lower(), None)
+    elif type_name:
+        class_definition = non_operator_blocks.get(type_name)
         if class_definition is None:
             class_definition = Operator
         block = class_definition(block_spec)
     else:
-        raise NotImplementedError('The block spec must contain a type, in order to create a Block')
+        raise NotImplementedError('The block spec must contain a type in order to create a Block')
 
     return block

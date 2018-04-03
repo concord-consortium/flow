@@ -54,6 +54,11 @@ class Block(object):
     def is_numeric(self):
         return not self.output_type == 'i'
 
+    # compute the value of this block, based on the values of the current input blocks and user-specified parameters
+    # implemented in sub-class if needed
+    def compute(self, inputs, params):
+        return None
+
     def get_source_values(self):
         source_values = []
         self.decimal_places = 0

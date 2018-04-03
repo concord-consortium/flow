@@ -7,6 +7,7 @@ class Timer(Block):
     def __init__(self, block_spec):
         super(Timer, self).__init__(block_spec)
         self.counter = 0
+        self.decimal_places = 0
         params = block_spec['params']
         self.seconds_on = self.read_param(params, 'seconds_on')
         self.seconds_off = self.read_param(params, 'seconds_off')
@@ -14,7 +15,7 @@ class Timer(Block):
 
     # this overrides the update function in the Block class
     def update(self):
-        if self.counter < self.seconds_on + self.seconds_off:
+        if self.counter + 1 < self.seconds_on + self.seconds_off:
             self.counter += 1
         else:
             self.counter = 0
@@ -23,4 +24,4 @@ class Timer(Block):
         else:
             self.value = 0
         self.stale = False
-        print('Timer update counter: %d, value: %d' % (self.counter, self.value))
+        #print('Timer update counter: %d, value: %d' % (self.counter, self.value))
