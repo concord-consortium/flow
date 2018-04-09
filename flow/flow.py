@@ -708,7 +708,7 @@ class Flow(object):
     def start_recording(self, data_storage_block):
         self.recording_interval = data_storage_block.read_param(data_storage_block.params, 'recording_interval', 1)
         dataset_location = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
-        self.recording_location = c.path_on_server() + '/' + dataset_location
+        self.recording_location = '/testing/student-folders/' + self.username + '/datasets/' + dataset_location
         self.sequence_names = data_storage_block.read_param(data_storage_block.params, 'sequence_names', 'data')
 
         #
