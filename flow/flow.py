@@ -90,6 +90,7 @@ class Flow(object):
         self.last_record_timestamp = None  # datetime object of last values recorded to long-term storage
         self.recording_interval = None  # number of seconds between storing values in long-term storage
         self.run_name = "Noname"  # name of run for which recording is being saved
+        self.sequence_names = {}  # a dictionary mapping block IDs to sequence names (when recording to server)
 
         c.add_message_handler(self)  # register to receive messages from server/websocket
         c.auto_devices.add_input_handler(self)
@@ -213,9 +214,6 @@ class Flow(object):
     # run the current diagram (if any); this is the main loop of the flow program
     def start(self):
 
-        # launch a greenlet to check for devices being plugged in
-        # gevent.spawn(self.check_devices)
-
         # launch a greenlet to send watchdog messages to server
         gevent.spawn(self.send_watchdog)
 
@@ -287,12 +285,9 @@ class Flow(object):
                     break
             if data_storage_block:  # if data storage block is defined, store everything that feeds into it
                 record_blocks = [b for b in data_storage_block.sources]
-            else:  # legacy support: store everything that doesn't have an input
-                record_blocks = [b for b in self.diagram.blocks if not b.input_type]
-            self.record_data(record_blocks, timestamp)
-            self.last_record_timestamp = timestamp
+                self.record_data(record_blocks, timestamp)
+                self.last_record_timestamp = timestamp
 
-    # handle messages from server (sent via websocket)
     def calc_auto_interval(self, start, end):
         """Calculate automatic interval.
           About 120 records should fit in start/end range.
@@ -550,59 +545,14 @@ class Flow(object):
             if set(('diagram', 'username')) <= set(params):
                 self.set_diagram(params)
 
-            self.recording_interval = int(params['rate'])
-            self.run_name = params.get('run_name')
-            if not self.run_name:
-                self.run_name = "Noname"
-
-            self.recording_location = params.get('recording_location')
-            if not self.recording_location:
-                self.recording_location = c.path_on_server()
-           
-            logging.info('start recording data (every %.2f seconds) to location %s' % (self.recording_interval, self.recording_location))
-            if self.store:
-                # save start for named run, (Noname if not given)
-                self.store.save('run', self.run_name, self.recording_interval, {'action': 'start'})
-
-            #
-            # Create sequences for blocks and create metadata file.
-            #
-            logging.info("Creating sequences...")
-            c.resources.create_folder(self.recording_location);
-            c.resources.write_file(
-                self.recording_location + "/metadata",
-                json.dumps({    
-                        'controller_path': c.path_on_server(),
-                        'controller_name': self.controller_name(),
-                        'program':  self.diagram.diagram_spec,
-                        'recording': True,
-                        'start_time': '%s' % (datetime.datetime.utcnow()),
-                        'recording_location': self.recording_location,
-                        'recording_user': self.username,
-                        'recording_interval': self.recording_interval }))
-
             # check for data storage block
             data_storage_block = None
             for block in self.diagram.blocks:
                 if block.type == 'data storage':
                     data_storage_block = block
                     break
-            if data_storage_block:  # if data storage block is defined, store everything that feeds into it
-                record_blocks = [b for b in data_storage_block.sources]
-                self.create_sequences(record_blocks)
-            else:  # legacy support: create sequences for any input devices
-                self.device_check_greenlet = gevent.spawn(self.check_devices)
-
-            self.send_message(  type + '_response',
-                                {   'success': True,
-                                    'message': "Recording started."
-                                })
-
-            #
-            # Ensure latest status reflects that this controller is
-            # recording.
-            #
-            self.send_status()
+            if data_storage_block:
+                self.start_recording(data_storage_block)
 
         elif type == 'stop_recording':
             logging.info('stop recording data')
@@ -755,6 +705,41 @@ class Flow(object):
         value   = float(values[0])
         self.sensor_data_latest[name] = (now, value)
 
+    def start_recording(self, data_storage_block):
+        self.recording_interval = data_storage_block.read_param(data_storage_block.params, 'recording_interval', 1)
+        dataset_location = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
+        self.recording_location = c.path_on_server() + '/' + dataset_location
+        self.sequence_names = data_storage_block.read_param(data_storage_block.params, 'sequence_names', 'data')
+
+        #
+        # Create sequences for blocks and create metadata file.
+        #
+        logging.info("Creating sequences...")
+        c.resources.create_folder(self.recording_location);
+        c.resources.write_file(
+            self.recording_location + "/metadata",
+            json.dumps({    
+                    'controller_path': c.path_on_server(),
+                    'controller_name': self.controller_name(),
+                    'program':  self.diagram.diagram_spec,
+                    'recording': True,
+                    'start_time': '%s' % (datetime.datetime.utcnow()),
+                    'recording_location': self.recording_location,
+                    'recording_user': self.username,
+                    'recording_interval': self.recording_interval }))
+        record_blocks = [b for b in data_storage_block.sources]
+        self.create_sequences(record_blocks)
+
+        self.send_message('start_recording_response',
+                            {   'success': True,
+                                'message': "Recording started."
+                            })
+
+        #
+        # Ensure latest status reflects that this controller is
+        # recording.
+        #
+        self.send_status()
 
     # record data by sending it to the server and/or storing it locally
     def record_data(self, blocks, timestamp):
@@ -773,9 +758,15 @@ class Flow(object):
 
         # store blocks on server
         sequence_prefix = self.recording_location + '/'
-        values = {sequence_prefix + b.name: b.value for b in blocks}
+        values = {}
+        for b in blocks:
+            id_str = str(b.id)
+            if id_str in self.sequence_names:
+                seq_name = sequence_prefix + self.sequence_names[id_str]
+                values[seq_name] = b.value
         logging.debug('c.update_sequences %s' % (values))
-        c.update_sequences(values, timestamp)
+        if values:
+            c.update_sequences(values, timestamp)
 
     # send locally recorded time series data to browser
     def send_history(self, params):
@@ -882,34 +873,6 @@ class Flow(object):
         own_path = c.path_on_server()
         c.resources.send_request_to_server('PUT', '/api/v1/resources' + own_path, {'status': json.dumps(status)})
 
-    # check for new devices and create sequences for them (run this as a greenlet)
-    def check_devices(self):
-
-        # get list of existing sequences
-        server_path = c.path_on_server()
-        if self.recording_location:
-            server_path = self.recording_location
-        print('server path: %s' % server_path)
-        file_infos = c.resources.list_files(server_path, type = 'sequence')
-        server_seqs = set([fi['name'] for fi in file_infos])
-        print('server seqs: %s' % server_seqs)
-
-        # loop forever checking for new devices; if found, create sequences for them
-        while True:
-
-            # if new device found, create sequence
-            for device in c.auto_devices._auto_devices:  # fix(soon): change to serial.devices()? doesn't work with sim sensors
-                if hasattr(device, 'name') and device.name:
-                    if device.name in server_seqs:
-                        device.store_sequence = False  # going to do in main loop below
-                    else:
-                        create_sequence(server_path, device.name, data_type=1, units=device.units)  # data_type 1 is numeric
-                        device.store_sequence = False  # going to do in main loop below
-                        server_seqs.add(device.name)
-
-            # sleep for a bit
-            c.sleep(5)
-
     # create sequences on server for the given blocks
     def create_sequences(self, blocks):
 
@@ -921,14 +884,14 @@ class Flow(object):
 
         # create a sequence for each block (that doesn't already have a sequence)
         for block in blocks:
-            if block.name not in server_seqs:
-                device = c.auto_devices.find_device(block.name)
-                units = device.units if device else None
-                create_sequence(self.recording_location, block.name, data_type=1, units=units)  # data_type 1 is numeric
-                server_seqs.add(block.name)
-
-            # sleep for a bit
-            c.sleep(5)
+            id_str = str(block.id)
+            if id_str in self.sequence_names:
+                seq_name = self.sequence_names[id_str]
+                if seq_name not in server_seqs:
+                    device = c.auto_devices.find_device(block.name)
+                    units = device.units if device else None
+                    create_sequence(self.recording_location, seq_name, data_type=1, units=units)  # data_type 1 is numeric
+                    server_seqs.add(block.name)
 
     #
     # Send all sensor data over websocket including sensor values
@@ -1105,12 +1068,6 @@ class Flow(object):
                 "handle_message: set_diagram name %s" % (name))
 
             self.diagram = Diagram(name, diagram_spec)
-
-        # if the diagram contains a data storage block, update our recording interval
-        for block in self.diagram.blocks:
-            if block.type == 'data storage':
-                self.recording_interval = block.read_param(block.params, 'recording_interval')
-                break
 
 
 # ======== UTILITY FUNCTIONS ========
