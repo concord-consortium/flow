@@ -953,15 +953,16 @@ class Flow(object):
 
             # add timer blocks
             # TODO: rename send_sensor_data since we're adding timer data
-            for block in self.diagram.blocks:
-                if block.type == 'timer':
-                    d = {
-                        'id': block.id,
-                        'name': block.name,
-                        'type': block.type,
-                        'value': block.value,
-                    }
-                    data.append(d)
+            if self.diagram:
+                for block in self.diagram.blocks:
+                    if block.type == 'timer':
+                        d = {
+                            'id': block.id,
+                            'name': block.name,
+                            'type': block.type,
+                            'value': block.value,
+                        }
+                        data.append(d)
 
             #
             # Send all sensor data.
