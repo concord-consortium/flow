@@ -573,6 +573,8 @@ class Flow(object):
 
             # otherwise, we still want to create a metadata file (using the recording location specified with this message)
             else:
+                metadata['recording'] = True  # note: not really recording; just need this to work with current front-end code
+                metadata['is_empty'] = True
                 self.recording_location = None
                 self.recording_interval = None
                 self.sequence_names = []
