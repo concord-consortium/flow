@@ -545,15 +545,63 @@ class Flow(object):
             if set(('diagram', 'username')) <= set(params):
                 self.set_diagram(params)
 
+            metadata = {
+                'controller_path': c.path_on_server(),
+                'controller_name': self.controller_name(),
+                'program':  self.diagram.diagram_spec,
+            }
+
             # check for data storage block
             data_storage_block = None
             for block in self.diagram.blocks:
                 if block.type == 'data storage':
                     data_storage_block = block
                     break
+    
+            # if data storage block, get recording info from it
             if data_storage_block:
-                self.start_recording(data_storage_block)
+                dataset_location = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
+                self.recording_location = '/testing/student-folders/' + self.username + '/datasets/' + dataset_location
+                self.recording_interval = data_storage_block.read_param(data_storage_block.params, 'recording_interval', 1)
+                self.sequence_names = data_storage_block.read_param(data_storage_block.params, 'sequence_names', 'data')
+                metadata_location = self.recording_location
+                metadata['recording'] = True
+                metadata['start_time'] = '%s' % (datetime.datetime.utcnow())  # TODO: should use ISO string
+                metadata['recording_location'] = self.recording_location
+                metadata['recording_user'] = self.username
+                metadata['recording_interval'] = self.recording_interval
 
+            # otherwise, we still want to create a metadata file (using the recording location specified with this message)
+            else:
+                self.recording_location = None
+                self.recording_interval = None
+                self.sequence_names = []
+                metadata_location = params['recording_location']  # TODO: rethink this
+
+            #
+            # Create metadata file.
+            #
+            logging.info("Creating sequences...")
+            c.resources.create_folder(metadata_location)
+            c.resources.write_file(metadata_location + "/metadata", json.dumps(metadata))
+
+            # Create sequences for blocks
+            if data_storage_block:
+                record_blocks = [b for b in data_storage_block.sources]
+                self.create_sequences(record_blocks)
+
+            self.send_message('start_recording_response',
+                                {   'success': True,
+                                    'message': "Recording started."
+                                })
+
+            #
+            # Ensure latest status reflects that this controller is
+            # recording.
+            #
+            self.send_status()
+                
+                
         elif type == 'stop_recording':
             logging.info('stop recording data')
 
@@ -704,42 +752,6 @@ class Flow(object):
         now     = datetime.datetime.utcnow()
         value   = float(values[0])
         self.sensor_data_latest[name] = (now, value)
-
-    def start_recording(self, data_storage_block):
-        self.recording_interval = data_storage_block.read_param(data_storage_block.params, 'recording_interval', 1)
-        dataset_location = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
-        self.recording_location = '/testing/student-folders/' + self.username + '/datasets/' + dataset_location
-        self.sequence_names = data_storage_block.read_param(data_storage_block.params, 'sequence_names', 'data')
-
-        #
-        # Create sequences for blocks and create metadata file.
-        #
-        logging.info("Creating sequences...")
-        c.resources.create_folder(self.recording_location);
-        c.resources.write_file(
-            self.recording_location + "/metadata",
-            json.dumps({    
-                    'controller_path': c.path_on_server(),
-                    'controller_name': self.controller_name(),
-                    'program':  self.diagram.diagram_spec,
-                    'recording': True,
-                    'start_time': '%s' % (datetime.datetime.utcnow()),
-                    'recording_location': self.recording_location,
-                    'recording_user': self.username,
-                    'recording_interval': self.recording_interval }))
-        record_blocks = [b for b in data_storage_block.sources]
-        self.create_sequences(record_blocks)
-
-        self.send_message('start_recording_response',
-                            {   'success': True,
-                                'message': "Recording started."
-                            })
-
-        #
-        # Ensure latest status reflects that this controller is
-        # recording.
-        #
-        self.send_status()
 
     # record data by sending it to the server and/or storing it locally
     def record_data(self, blocks, timestamp):
@@ -938,7 +950,19 @@ class Flow(object):
 
                 dict['value'] = value
                 data.append(dict)
-            
+
+            # add timer blocks
+            # TODO: rename send_sensor_data since we're adding timer data
+            for block in self.diagram.blocks:
+                if block.type == 'timer':
+                    d = {
+                        'id': block.id,
+                        'name': block.name,
+                        'type': block.type,
+                        'value': block.value,
+                    }
+                    data.append(d)
+
             #
             # Send all sensor data.
             #
