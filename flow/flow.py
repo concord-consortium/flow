@@ -560,11 +560,12 @@ class Flow(object):
     
             # if data storage block, get recording info from it
             if data_storage_block:
-                dataset_location = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
-                self.recording_location = '/testing/student-folders/' + self.username + '/datasets/' + dataset_location
+                dataset_displayedName = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
+                self.recording_location = params['recording_location']
                 self.recording_interval = data_storage_block.read_param(data_storage_block.params, 'recording_interval', 1)
                 self.sequence_names = data_storage_block.read_param(data_storage_block.params, 'sequence_names', 'data')
                 metadata_location = self.recording_location
+                metadata['displayedName'] = dataset_displayedName				
                 metadata['recording'] = True
                 metadata['start_time'] = '%s' % (datetime.datetime.utcnow())  # TODO: should use ISO string
                 metadata['recording_location'] = self.recording_location
