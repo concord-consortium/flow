@@ -1,6 +1,7 @@
 # Flow
 
-This is the Manylabs data flow client program that runs on a local computer (e.g. Raspberry Pi).
+Developed by the Concord Consortium in collaboration with Manylabs, the data flow client program
+runs on a local computer (e.g. Raspberry Pi).
 
 ## Overview
 
@@ -25,7 +26,7 @@ load, save, rename, and delete diagrams.
 
 The user can instruct the flow program to begin recording data. Currently recorded data is sent
 to the server at a user-specified sampling rate (e.g. once every 5 seconds). 
-Currently only input blocks (sensors) are stored.
+Any block connected to a data storage block is stored.
 
 Data is stored as sequence objects on the server. If a sequence does not exist for an input block,
 the flow program will create one. Currently data is stored using PUT requests made via the rhizo
