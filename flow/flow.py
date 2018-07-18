@@ -631,7 +631,7 @@ class Flow(object):
 
             stoptime = params.get('stoptime')
             if stoptime is None:
-                stoptime = 15
+                stoptime = 60
 
             self.sensor_data_greenlet = gevent.spawn(   self.send_sensor_data, 
                                                         stoptime )
