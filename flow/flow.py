@@ -12,6 +12,7 @@ import gevent
 from PIL import Image
 from rhizo.main import c
 from rhizo.extensions.camera import encode_image
+import requests
 
 # our own imports
 from sim_devices import simulate, add_sim_sensor, add_sim_actuator, remove_sim_device
@@ -24,7 +25,6 @@ from commands.command                   import Command
 from commands.list_versions_command     import ListVersionsCommand
 from commands.download_software_command import DownloadSoftwareCommand
 from commands.update_software_command   import UpdateSoftwareCommand
-
 
 #
 # Check if we can include IP addresses in our status
@@ -81,7 +81,7 @@ class Flow(object):
     def __init__(self):
         self.diagram = None  # the currently running diagram (if any)
         # used to perform always save history for each non-sim sensor
-        #   at sensor raw reading interval 
+        #   at sensor raw reading interval
         self.integ_test = False
         self.publisher = None
         self.store = None
@@ -102,7 +102,7 @@ class Flow(object):
             diagram_spec = load_diagram(name)
             logging.debug("Flow.__init__: loading diagram: %s" % name)
             self.diagram = Diagram(name, diagram_spec)
-       
+
 
         # call init functions. if they fail, mqtt, store resp. will be noop
         if c.config.get('enable_ble', False):
@@ -124,7 +124,7 @@ class Flow(object):
                     self.recording_interval = int(point.get("value"))
                     self.run_name = point.get("name")
             # sample data:
-            # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
+            # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242,
             #  u'max': 245, u'time': u'2017-06-16T20:42:00Z', u'mean': 244.8}, ...
 
             # if diagram not loaded from hardcoded config, load from influxdb 'diagram' measurement
@@ -168,13 +168,16 @@ class Flow(object):
         self.sensor_data_greenlet   = None  # Greenlet for sending sensor
                                             # data over the websocket.
 
+        self.firebase                      = None  # Holds parameters from flow_server::firebase_init message
+        self.firebase_sensor_data_greenlet = None # Greenlet for sending sensor data to Firebase.
+
 
     # MQTT integration
     def init_mqtt(self):
         """Initialize mqtt."""
         try:
             from mqttclient import MqttPublisher
-            #TODO: load mq_topic from config. It has to be the same 
+            #TODO: load mq_topic from config. It has to be the same
             # --- as in gattserver/hpserver.py
             mq_topic = "flow/ble"
             self.publisher = MqttPublisher(mq_topic)
@@ -303,7 +306,7 @@ class Flow(object):
             end = parse(end)
             diff = end - start
             #interval_diff = diff/120
-            total_seconds = diff.total_seconds() 
+            total_seconds = diff.total_seconds()
             if total_seconds <= 600:
                 # < 10m
                 ret = None
@@ -338,7 +341,7 @@ class Flow(object):
         # For any messages that choose to implement the command interface,
         # they can be instantiated using their message type as key.
         #
-        command_class_dict = { 
+        command_class_dict = {
             'download_software_updates':    DownloadSoftwareCommand,
             'list_software_versions':       ListVersionsCommand,
             'update_software_version':      UpdateSoftwareCommand }
@@ -351,7 +354,8 @@ class Flow(object):
                                     'list_diagrams',
                                     'request_status',
                                     'rename_diagram',
-                                    'delete_diagram'    ]
+                                    'delete_diagram',
+                                    'flow_server::firebase_init'  ]
 
         #
         # Restrict allowed operations while recording.
@@ -405,16 +409,16 @@ class Flow(object):
             #
             if self.recording_interval is not None:
                 if params['old_name'] == self.diagram.name:
-             
-                    self.send_message(  
+
+                    self.send_message(
                                 'rename_diagram_response',
                                 {   'success': False,
                                     'message': "Cannot rename diagram while recording"
                                 })
                     return
-                   
+
             rename_diagram(params['old_name'], params['new_name'])
-            self.send_message(  
+            self.send_message(
                                 'rename_diagram_response',
                                 {   'success': True,
                                     'message': "Diagram renamed"
@@ -427,17 +431,17 @@ class Flow(object):
             #
             if self.recording_interval is not None:
                 if params['name'] == self.diagram.name:
-             
-                    self.send_message(  
+
+                    self.send_message(
                                 'delete_diagram_response',
                                 {   'success': False,
                                     'message': "Cannot delete diagram while recording"
                                 })
                     return
-            
+
             delete_diagram(params['name'])
 
-            self.send_message(  
+            self.send_message(
                                 'delete_diagram_response',
                                 {   'success': True,
                                     'message': "Diagram deleted"
@@ -458,7 +462,7 @@ class Flow(object):
             #open('local.hjson', 'w').write(hjson.dumps(local_config))
             if self.store:
                 self.store.save('diagram', params['name'], 0, {'action': 'start'})
- 
+
             self.send_message(  'start_diagram_response',
                                 {   'success': True,
                                     'message': "Started diagram: %s" % (params['name'])
@@ -472,7 +476,7 @@ class Flow(object):
             # indicating that we are no longer recording to that location.
             # Note if a controller dies while recording, the metadata
             # will still indicate 'recording: True', so someone might stop
-            # a recording (to update the metadata to set 'recording: False') 
+            # a recording (to update the metadata to set 'recording: False')
             # even though the controller might no longer be recording to that
             # location. There should probably be a better way to handle this.
             #
@@ -501,7 +505,7 @@ class Flow(object):
                         json.dumps({    'controller_path': c.path_on_server(),
                                         'recording': False,
                                         'recording_interval': self.recording_interval }))
- 
+
             if self.recording_location != stop_location:
                 #
                 # We are not really recording to the location we
@@ -557,7 +561,7 @@ class Flow(object):
                 if block.type == 'data storage':
                     data_storage_block = block
                     break
-    
+
             # if data storage block, get recording info from it
             if data_storage_block:
                 dataset_displayedName = data_storage_block.read_param(data_storage_block.params, 'dataset_location', 'data')
@@ -565,7 +569,7 @@ class Flow(object):
                 self.recording_interval = data_storage_block.read_param(data_storage_block.params, 'recording_interval', 1)
                 self.sequence_names = data_storage_block.read_param(data_storage_block.params, 'sequence_names', 'data')
                 metadata_location = self.recording_location
-                metadata['displayedName'] = dataset_displayedName				
+                metadata['displayedName'] = dataset_displayedName
                 metadata['recording'] = True
                 metadata['start_time'] = '%s' % (datetime.datetime.utcnow())  # TODO: should use ISO string
                 metadata['recording_location'] = self.recording_location
@@ -603,8 +607,8 @@ class Flow(object):
             # recording.
             #
             self.send_status()
-                
-                
+
+
         elif type == 'stop_recording':
             logging.info('stop recording data')
 
@@ -633,7 +637,7 @@ class Flow(object):
             if stoptime is None:
                 stoptime = 60
 
-            self.sensor_data_greenlet = gevent.spawn(   self.send_sensor_data, 
+            self.sensor_data_greenlet = gevent.spawn(   self.send_sensor_data,
                                                         stoptime )
 
             self.send_message(  type + '_response',
@@ -667,6 +671,14 @@ class Flow(object):
             class_  = command_class_dict[type]
             cmd     = class_(self, type, params)
             cmd.exec_cmd()
+
+        elif type == 'flow_server::firebase_init':
+            self.firebase = params
+            send_sensor_data = self.firebase['send_sensor_data']
+            if send_sensor_data and send_sensor_data['enabled'] and c.config.get('firebase_send_sensor_data', True):
+                if self.firebase_sensor_data_greenlet is not None:
+                    self.firebase_sensor_data_greenlet.kill()
+                self.firebase_sensor_data_greenlet = gevent.spawn(self.firebase_send_sensor_data, self.firebase, send_sensor_data)
 
         else:
             used = False
@@ -748,7 +760,7 @@ class Flow(object):
             if block:
                 block.decimal_places = block.compute_decimal_places(values[0])
                 block.value = float(values[0])
-     
+
         #
         # Store last read sensor data associated with a physical sensor.
         #
@@ -788,7 +800,7 @@ class Flow(object):
 
         # history is currently only used for sending local history
         #  over ble
-        #  Sample parameters for type history: {u'count': 100000, u'start_timestamp': u'2017-06-15T23:50:19.567Z', 
+        #  Sample parameters for type history: {u'count': 100000, u'start_timestamp': u'2017-06-15T23:50:19.567Z',
         #    u'name': u'temperature', u'end_timestamp': u'2017-06-16T00:00:19.567Z'}
         history = []
         if self.store:
@@ -810,16 +822,16 @@ class Flow(object):
                 if interval:
                     query = \
                       """SELECT mean(mean) from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' group by time(%s) limit %s""" % \
-                      (name, start, end, interval, count) 
+                      (name, start, end, interval, count)
                 else:
                     query = \
                       """SELECT mean from sensor_mean where "name"='%s' and time > '%s' and time <= '%s' limit %s""" % \
-                      (name, start, end, count) 
+                      (name, start, end, count)
                 logging.debug("interval=%s, query=%s" % (interval, query))
                 rs = self.store.query(query)
 
                 # sample data:
-                # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242, 
+                # points: [{u'count': 60, u'name': u'light', u'pin': u'2671', u'min': 242,
                 #  u'max': 245, u'time': u'2017-06-16T20:42:00Z', u'mean': 244.8}, ...
 
                 points = list(rs.get_points())
@@ -832,7 +844,7 @@ class Flow(object):
                     if not values:
                         values = [0,0]
                         timestamps = [start, end]
-                    jsonobj = {"type": type, "parameters": { "name": name, 
+                    jsonobj = {"type": type, "parameters": { "name": name,
                       "values": values, "timestamps": timestamps }
                     }
                     #jsonmsg = '{"type":"sensor_update","parameters":{"values":[388.0],"name":"light"}}'
@@ -908,6 +920,100 @@ class Flow(object):
                     create_sequence(self.recording_location, seq_name, data_type=1, units=units)  # data_type 1 is numeric
                     server_seqs.add(block.name)
 
+    # get sensor data
+    def get_sensor_data(self):
+        data = []
+        for device in c.auto_devices._auto_devices:
+
+            dict    = device.as_dict()
+            name    = dict['name']
+            value   = None
+
+            if name in self.sensor_data_latest:
+                (time, value) = self.sensor_data_latest[name]
+                #
+                # How to decide when a value is stale?
+                # This might not be necessary since _auto_devices
+                # removes the unplugged USB device...
+                #
+                now = datetime.datetime.utcnow()
+                if time < now - datetime.timedelta(seconds=5):
+                    value = None
+
+            dict['value'] = value
+            data.append(dict)
+
+        # add timer blocks
+        # TODO: rename send_sensor_data since we're adding timer data
+        if self.diagram:
+            for block in self.diagram.blocks:
+                if block.type == 'timer':
+                    d = {
+                        'id': block.id,
+                        'name': block.name,
+                        'type': block.type,
+                        'value': block.value,
+                    }
+                    data.append(d)
+
+        return data
+
+    #
+    # Send all sensor data to Firebase including sensor values
+    #
+    def firebase_send_sensor_data(self, firebase, send_sensor_data):
+        started  = datetime.datetime.utcnow().replace(microsecond=0)
+        interval = send_sensor_data["interval"]
+
+        api_key = firebase["api_key"]
+        google_auth_url = 'https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyCustomToken?key=%s' % (api_key)
+        refresh_token_url = 'https://securetoken.googleapis.com/v1/token?key=%s' % (api_key)
+
+        logging.debug("firebase_send_sensor_data start: %s, interval: %s" % (started, interval))
+
+        # Enable https connection reuse to Firebase
+        session = requests.Session()
+        session.mount('https://', requests.adapters.HTTPAdapter())
+
+        # Exchange the custom token for an id token
+        r = session.post(google_auth_url, headers={'Content-Type': 'application/json'}, data = json.dumps({'token': firebase["token"], 'returnSecureToken': True}))
+        if r.status_code != 200:
+            logging.error('ABORTING firebase_send_sensor_data thread!  POST to %s returned %s' % (google_auth_url, r.status_code))
+            return
+        auth = r.json()
+        id_token = auth["idToken"]
+        refresh_token = auth["refreshToken"]
+        expires_in = int(time.time()) + int(auth["expiresIn"])
+
+        while True:
+            # refresh token when there is 5 minutes left
+            now = int(time.time())
+            if now >= expires_in - (5*60):
+                logging.debug('Refreshing token')
+                r = session.post(refresh_token_url, headers={'Content-Type': 'application/json'}, data = json.dumps({'refresh_token': refresh_token, 'grant_type': 'refresh_token'}))
+                if r.status_code != 200:
+                    logging.error('ABORTING firebase_send_sensor_data thread!  POST to %s returned %s' % (refresh_token_url, r.status_code))
+                    return
+                refresh = r.json()
+                id_token = refresh["id_token"]
+                refresh_token = refresh["refresh_token"]
+                expires_in = int(time.time()) + int(refresh["expires_in"])
+
+            # Get data
+            data = self.get_sensor_data()
+            timestamp = datetime.datetime.utcnow().isoformat() + "Z"
+
+            # Send PUT request
+            firebase_url = 'https://%s.firebaseio.com%s.json?auth=%s' % (firebase["project_id"], send_sensor_data["path"], id_token)
+            r = session.put(firebase_url, data = json.dumps({'timestamp': timestamp, 'data': data}))
+            if r.status_code == 200:
+                logging.debug('Sent %s to %s' % (data, firebase_url))
+            else:
+                logging.error('PUT to %s returned %s - %s' % (firebase_url, r.status_code, r.text))
+
+            # Sleep
+            c.sleep(interval)
+
     #
     # Send all sensor data over websocket including sensor values
     # Stop after specified number of minutes.
@@ -916,8 +1022,8 @@ class Flow(object):
 
         timestamp   = datetime.datetime.utcnow().replace(microsecond=0)
         stoptime    = timestamp + datetime.timedelta(minutes=minutes)
-        
-        logging.debug("send_sensor_data start: %s stop: %s" % 
+
+        logging.debug("send_sensor_data start: %s stop: %s" %
                         (timestamp, stoptime))
 
         while True:
@@ -931,48 +1037,11 @@ class Flow(object):
                 break
 
             #
-            # For each sensor, collect data to send.
-            #
-            data = []
-            for device in c.auto_devices._auto_devices:
-
-                dict    = device.as_dict()
-                name    = dict['name']
-                value   = None
-
-                if name in self.sensor_data_latest:
-                    (time, value) = self.sensor_data_latest[name]
-                    #
-                    # How to decide when a value is stale?
-                    # This might not be necessary since _auto_devices
-                    # removes the unplugged USB device...
-                    #
-                    now = datetime.datetime.utcnow()
-                    if time < now - datetime.timedelta(seconds=5):
-                        value = None
-
-                dict['value'] = value
-                data.append(dict)
-
-            # add timer blocks
-            # TODO: rename send_sensor_data since we're adding timer data
-            if self.diagram:
-                for block in self.diagram.blocks:
-                    if block.type == 'timer':
-                        d = {
-                            'id': block.id,
-                            'name': block.name,
-                            'type': block.type,
-                            'value': block.value,
-                        }
-                        data.append(d)
-
-            #
             # Send all sensor data.
             #
-            c.send_message('send_sensor_data_response', 
+            c.send_message('send_sensor_data_response',
                             {   'success':      True,
-                                'data':         data,
+                                'data':         self.get_sensor_data(),
                                 'src_folder':   c.path_on_server()  } )
             #
             # Sleep
@@ -981,7 +1050,7 @@ class Flow(object):
 
 
     #
-    # Send watchdog message to server so that it knows which 
+    # Send watchdog message to server so that it knows which
     # controllers are online
     #
     def send_watchdog(self):
