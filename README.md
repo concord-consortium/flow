@@ -1,5 +1,7 @@
 # Flow
 
+_This material is based upon work supported by the National Science Foundation under Grant No. DRL-1640054. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation._
+
 Developed by the Concord Consortium in collaboration with Manylabs, the data flow client program
 runs on a local computer (e.g. Raspberry Pi).
 
@@ -9,23 +11,23 @@ The flow program receives data from sensors and can send outputs to actuators. I
 a data flow diagram that describes operations that transform the inputs to outputs. It can
 also store sensor data on a server for later viewing.
 
-The flow program uses the [rhizo](https://github.com/rhizolab/rhizo) client library to 
+The flow program uses the [rhizo](https://github.com/rhizolab/rhizo) client library to
 communicate with a [rhizo-server](https://github.com/rhizolab/rhizo-server) machine.
 
 ### Diagrams
 
 The flow program can run one diagram at a time. A diagram is made up of a collection of blocks,
-which can include inputs, outputs, and filters. At each point in time, each block has either a 
-single value (typically a number or image) or an undefined value. The flow program propagates 
+which can include inputs, outputs, and filters. At each point in time, each block has either a
+single value (typically a number or image) or an undefined value. The flow program propagates
 values through the diagram.
 
-Diagrams are currently stored as JSON files in the local file system. The flow program can 
+Diagrams are currently stored as JSON files in the local file system. The flow program can
 load, save, rename, and delete diagrams.
 
 ### Data Storage
 
 The user can instruct the flow program to begin recording data. Currently recorded data is sent
-to the server at a user-specified sampling rate (e.g. once every 5 seconds). 
+to the server at a user-specified sampling rate (e.g. once every 5 seconds).
 Any block connected to a data storage block is stored.
 
 Data is stored as sequence objects on the server. If a sequence does not exist for an input block,
@@ -55,7 +57,7 @@ any messages from the browser recently (so as to reduce unnecessary network traf
 
 ## Optional/Experimental Components
 
-### Flow to Flow-ble Integration Setup 
+### Flow to Flow-ble Integration Setup
 
 Note: for flow service side of integration, only pip2 install below is needed.
 
@@ -77,7 +79,7 @@ sudo pip3 install --upgrade setuptools
 ```
 
 ### Store Database Setup
- 
+
 Currently, store will be disabled if influxdb service is not running or influxdb Python
 library is not installed.
 
