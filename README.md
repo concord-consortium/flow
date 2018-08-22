@@ -1,7 +1,5 @@
 # Flow
 
-_This material is based upon work supported by the National Science Foundation under Grant No. DRL-1640054. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation._
-
 Developed by the Concord Consortium in collaboration with Manylabs, the data flow client program
 runs on a local computer (e.g. Raspberry Pi).
 
@@ -98,3 +96,8 @@ dpkg -i influxdb_1.2.4_armhf.deb
 # install Python library
 sudo pip2 install influxdb
 ```
+
+## Acknowledgement
+
+_This material is based upon work supported by the National Science Foundation under Grant No. DRL-1640054. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation._
+
