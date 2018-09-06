@@ -505,6 +505,14 @@ class Flow(object):
                         json.dumps({    'controller_path': c.path_on_server(),
                                         'recording': False,
                                         'recording_interval': self.recording_interval }))
+            #
+            # Stop recording if in progress.
+            # Remove the currently running diagram program.
+            # Remove the currently set user.
+            #
+            self.recording_interval = None
+            self.diagram            = None
+            self.username           = None
 
             if self.recording_location != stop_location:
                 #
@@ -518,15 +526,7 @@ class Flow(object):
                                     })
                 return
 
-            #
-            # Stop recording if in progress.
-            # Remove the currently running diagram program.
-            # Remove the currently set user.
-            #
-            self.recording_interval = None
             self.recording_location = None
-            self.diagram            = None
-            self.username           = None
 
             self.send_message(  type + '_response',
                                 {   'success': True,
