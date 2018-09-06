@@ -511,7 +511,6 @@ class Flow(object):
             # Remove the currently set user.
             #
             self.recording_interval = None
-            self.recording_location = None
             self.diagram            = None
             self.username           = None
 
@@ -526,6 +525,8 @@ class Flow(object):
                                         'message': "This controller was no longer recording at that location, but the recording has been marked as stopped."
                                     })
                 return
+
+            self.recording_location = None
 
             self.send_message(  type + '_response',
                                 {   'success': True,
