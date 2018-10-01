@@ -1,8 +1,10 @@
 # standard python imports
+import os
 import time
 import json
 import logging
 import datetime
+import subprocess
 from dateutil.parser import parse
 import numbers
 
@@ -85,6 +87,7 @@ class Flow(object):
         self.integ_test = False
         self.publisher = None
         self.store = None
+        self.sensaur_hub = None
         self.last_user_message_time = None  # the last user message time (if any)
         self.last_camera_store_time = None  # the last camera sequence update time (if any)
         self.last_record_timestamp = None  # datetime object of last values recorded to long-term storage
@@ -94,6 +97,14 @@ class Flow(object):
 
         c.add_message_handler(self)  # register to receive messages from server/websocket
         c.auto_devices.add_input_handler(self)
+
+        # if using sensaur system, initialize it
+        if c.config.get('enable_sensaur') and c.config.get('sensaur_port'):
+            import sensaur
+            self.sensaur_hub = sensaur.Hub(c.config['sensaur_port'])
+            self.sensaur_hub.add_input_handler(self)
+        else:
+            self.sensaur_hub = None
 
         # load last diagram on startup
         # TODO: decide to use this or self.store("diagram"...) below
@@ -220,6 +231,10 @@ class Flow(object):
         # launch a greenlet to send watchdog messages to server
         gevent.spawn(self.send_watchdog)
 
+        # launch sensaur greenlets if enabled
+        if self.sensaur_hub:
+            self.sensaur_hub.start_greenlets()
+
         # loop forever
         timestamp = datetime.datetime.utcnow().replace(microsecond=0)
         while True:
@@ -262,14 +277,17 @@ class Flow(object):
 
             # send values to actuators
             if not block.output_type:
-                device = c.auto_devices.find_device(block.name)  # fix(later): does this still work if we rename a block?
+                device = self.find_device(block.name)  # fix(later): does this still work if we rename a block?
                 if device and device.dir == 'out':
                     try:
                         value = int(block.value)
                     except:
                         value = None
                     if value is not None:
-                        device.send_command('set %d' % value)
+                        if hasattr(device, 'send_command'):
+                            device.send_command('set %d' % value)  # for auto_devices devices
+                        else:
+                            self.sensaur_hub.set_output_value(device, value)  # for sensaur components
 
         #logging.debug('flow.start loop: values=%s' % values)
         if self.last_user_message_time and (time.time() - self.last_user_message_time < IDLE_STOP_UPDATE_THRESHOLD):
@@ -383,7 +401,7 @@ class Flow(object):
         used = True
         if type == 'list_devices':
             print 'list_devices'
-            for device in c.auto_devices._auto_devices:
+            for device in self.device_list():
                 self.send_message('device_added', device.as_dict())
 
         elif type == 'history':
@@ -649,9 +667,20 @@ class Flow(object):
         elif type == 'rename_block':
             old_name = params['old_name']
             new_name = params['new_name']
-            device = c.auto_devices.find_device(old_name)
+            device = self.find_device(old_name)
             device.name = new_name
             rename_sequence(c.path_on_server(), old_name, new_name)  # change sequence name on server
+
+        elif type == 'update_actuator':
+            name = params['name']
+            value = params['value']
+            device = c.auto_devices.find_device(name)
+            if device:
+                device.send_command('set %s' % value)
+            elif self.sensaur_hub:
+                component = self.sensaur_hub.find_component(name)
+                if component:
+                    self.sensaur_hub.set_output_value(component, value)
 
         elif type == 'add_camera':
             self.add_camera()
@@ -736,7 +765,17 @@ class Flow(object):
     #
     # How do we map these?
     #
-    def handle_input(self, name, values):
+    def handle_input(self, device_or_name, value):
+
+        # get the device name
+        # the auto_devices code provides a name; the senaur code provides a device object
+        if hasattr(device_or_name, 'name'):
+            name = device_or_name.name
+            values = [value]  # the sensaur system just sends a single value at a time
+        else:
+            name = device_or_name
+            values = value  # the auto_devices system provides a list of values for one device
+
         # logging.debug('input_handler: name=%s, values[0]=%s' % (name, values[0]))
         # ---- start of send_message replacement (store and ble test without diagram open)
         if self.integ_test:
@@ -876,15 +915,21 @@ class Flow(object):
                     for link in links:
                         ip_map[interface] = link['addr']
 
+        if os.path.exists('/sys/class/net/wlan0/address'):
+            mac_addr = subprocess.check_output(['cat', '/sys/class/net/wlan0/address']).strip()  # for raspi
+        else:
+            mac_addr = 'N/A'
+
         status = {
             'operational_status':   self.operational_status,
             'available_versions':   self.available_versions,
             'username':             self.username,
             'flow_version':         Flow.FLOW_VERSION,
             'lib_version':          c.VERSION + ' ' + c.BUILD,
-            'device_count':         len(c.auto_devices._auto_devices),
+            'device_count':         len(self.device_list()),
             'recording_interval':   self.recording_interval,
             'ip_addresses':         ip_map,
+            'mac_address':          mac_addr,
         }
 
         if self.diagram:
@@ -915,7 +960,7 @@ class Flow(object):
             if id_str in self.sequence_names:
                 seq_name = self.sequence_names[id_str]
                 if seq_name not in server_seqs:
-                    device = c.auto_devices.find_device(block.name)
+                    device = self.find_device(block.name)
                     units = device.units if device else None
                     create_sequence(self.recording_location, seq_name, data_type=1, units=units)  # data_type 1 is numeric
                     server_seqs.add(block.name)
@@ -923,7 +968,7 @@ class Flow(object):
     # get sensor data
     def get_sensor_data(self):
         data = []
-        for device in c.auto_devices._auto_devices:
+        for device in self.device_list():
 
             dict    = device.as_dict()
             name    = dict['name']
@@ -957,6 +1002,23 @@ class Flow(object):
                     data.append(d)
 
         return data
+
+    # get list of devices
+    def device_list(self):
+        devices = c.auto_devices._auto_devices
+        if self.sensaur_hub:
+            if devices:  # handle this case separately, since it will be slow (making copies of lists) and unusual (only when have both old and new hardware attached at the same time)
+                devices = devices + self.sensaur_hub.components  # note: a device is called a component in the sensaur system
+            else:
+                devices = self.sensaur_hub.components
+        return devices
+
+    # find a device by name; assumes each device has a unique name
+    def find_device(self, name):
+        device = c.auto_devices.find_device(name)
+        if not device and self.sensaur_hub:
+            device = self.sensaur_hub.find_component(name)  # note: a device is called a component in the sensaur system
+        return device
 
     #
     # Send all sensor data to Firebase including sensor values
