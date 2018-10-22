@@ -1036,12 +1036,20 @@ class Flow(object):
         # Enable https connection reuse to Firebase
         session = requests.Session()
         session.mount('https://', requests.adapters.HTTPAdapter())
-
+						
         # Exchange the custom token for an id token
-        r = session.post(google_auth_url, headers={'Content-Type': 'application/json'}, data = json.dumps({'token': firebase["token"], 'returnSecureToken': True}))
-        if r.status_code != 200:
-            logging.error('ABORTING firebase_send_sensor_data thread!  POST to %s returned %s' % (google_auth_url, r.status_code))
-            return
+        post_succeeded = False;
+        while not post_succeeded:
+            try:
+                r = session.post(google_auth_url, headers={'Content-Type': 'application/json'}, data = json.dumps({'token': firebase["token"], 'returnSecureToken': True}))
+                if r.status_code != 200:
+                    logging.error('ABORTING firebase_send_sensor_data thread!  POST to %s returned %s' % (google_auth_url, r.status_code))
+                    return
+                post_succeeded = True
+            except Exception as err:
+                logging.error("Session post error: %s" % (err))
+                c.sleep(0.1)
+		
         auth = r.json()
         id_token = auth["idToken"]
         refresh_token = auth["refreshToken"]
