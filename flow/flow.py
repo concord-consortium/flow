@@ -1048,7 +1048,7 @@ class Flow(object):
                 post_succeeded = True
             except Exception as err:
                 logging.error("Session post error: %s" % (err))
-                c.sleep(0.1)
+                c.sleep(1)
 		
         auth = r.json()
         id_token = auth["idToken"]
