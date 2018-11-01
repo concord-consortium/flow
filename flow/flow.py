@@ -1036,7 +1036,7 @@ class Flow(object):
         # Enable https connection reuse to Firebase
         session = requests.Session()
         session.mount('https://', requests.adapters.HTTPAdapter())
-						
+
         # Exchange the custom token for an id token
         post_succeeded = False;
         while not post_succeeded:
@@ -1049,37 +1049,40 @@ class Flow(object):
             except Exception as err:
                 logging.error("Session post error: %s" % (err))
                 c.sleep(1)
-		
+
         auth = r.json()
         id_token = auth["idToken"]
         refresh_token = auth["refreshToken"]
         expires_in = int(time.time()) + int(auth["expiresIn"])
 
         while True:
-            # refresh token when there is 5 minutes left
-            now = int(time.time())
-            if now >= expires_in - (5*60):
-                logging.debug('Refreshing token')
-                r = session.post(refresh_token_url, headers={'Content-Type': 'application/json'}, data = json.dumps({'refresh_token': refresh_token, 'grant_type': 'refresh_token'}))
-                if r.status_code != 200:
-                    logging.error('ABORTING firebase_send_sensor_data thread!  POST to %s returned %s' % (refresh_token_url, r.status_code))
-                    return
-                refresh = r.json()
-                id_token = refresh["id_token"]
-                refresh_token = refresh["refresh_token"]
-                expires_in = int(time.time()) + int(refresh["expires_in"])
+            try:
+                # refresh token when there is 5 minutes left
+                now = int(time.time())
+                if now >= expires_in - (5*60):
+                    logging.debug('Refreshing token')
+                    r = session.post(refresh_token_url, headers={'Content-Type': 'application/json'}, data = json.dumps({'refresh_token': refresh_token, 'grant_type': 'refresh_token'}))
+                    if r.status_code != 200:
+                        logging.error('ABORTING firebase_send_sensor_data thread!  POST to %s returned %s' % (refresh_token_url, r.status_code))
+                        return
+                    refresh = r.json()
+                    id_token = refresh["id_token"]
+                    refresh_token = refresh["refresh_token"]
+                    expires_in = int(time.time()) + int(refresh["expires_in"])
 
-            # Get data
-            data = self.get_sensor_data()
-            timestamp = datetime.datetime.utcnow().isoformat() + "Z"
+                # Get data
+                data = self.get_sensor_data()
+                timestamp = datetime.datetime.utcnow().isoformat() + "Z"
 
-            # Send PUT request
-            firebase_url = 'https://%s.firebaseio.com%s.json?auth=%s' % (firebase["project_id"], send_sensor_data["path"], id_token)
-            r = session.put(firebase_url, data = json.dumps({'timestamp': timestamp, 'data': data}))
-            if r.status_code == 200:
-                logging.debug('Sent %s to %s' % (data, firebase_url))
-            else:
-                logging.error('PUT to %s returned %s - %s' % (firebase_url, r.status_code, r.text))
+                # Send PUT request
+                firebase_url = 'https://%s.firebaseio.com%s.json?auth=%s' % (firebase["project_id"], send_sensor_data["path"], id_token)
+                r = session.put(firebase_url, data = json.dumps({'timestamp': timestamp, 'data': data}))
+                if r.status_code == 200:
+                    logging.debug('Sent %s to %s' % (data, firebase_url))
+                else:
+                    logging.error('PUT to %s returned %s - %s' % (firebase_url, r.status_code, r.text))
+            except Exception as err:
+                logging.error("Exception sending sensor data to Firebase: %s" % (err))
 
             # Sleep
             c.sleep(interval)
